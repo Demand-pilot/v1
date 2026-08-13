@@ -935,30 +935,30 @@
                     <div class="deliverable-badge">Deliverable 6 · Design / Workflow</div>
                     <h2 class="slide-title">Automating Pipeline Execution & Quality Mediation</h2>
                 </div>
-                <div class="slide-subtitle">Solving pipeline fragility through automated profiling, backtesting, and error routing.</div>
+                <div class="slide-subtitle">How raw transaction logs move across 10 automated execution states to generate stock purchase orders.</div>
             </div>
             <div class="diagram-split-container">
                 <div class="diagram-image-box">
                     <img src="../images/_-%20visual%20selection%20%281%29.svg" alt="10-State Data Pipeline & Backtest Mediator Flow">
                 </div>
                 <div class="diagram-text-box">
-                    <div class="card-meta">10 Pipeline States Breakdown</div>
+                    <div class="card-meta">Complete 10-State Execution Workflow</div>
                     <ul class="node-list">
                         <li class="node-item">
-                            <div class="node-title">State 1 & 2: Ingestion & Construction</div>
-                            <div class="node-desc">Unified cleaning of train.csv/oil.csv; constructing 1,782 store-family time series.</div>
+                            <div class="node-title">Phase 1: Ingestion &amp; Time-Series Matrix (States 1-2)</div>
+                            <div class="node-desc">Cleans train.csv &amp; linearly interpolates weekend oil gaps. Assembles 1,782 parallel daily time series (54 stores × 33 families).</div>
                         </li>
                         <li class="node-item">
-                            <div class="node-title">State 3 & 4: Profiling & Quality Router</div>
-                            <div class="node-desc">Calculates zero ratio and directs inactive series to zero masks, sparse to Croston, standard to ML.</div>
+                            <div class="node-title">Phase 2: Profiling &amp; Quality Routing (States 3-4)</div>
+                            <div class="node-desc">Calculates series volatility (CV) and zero ratios. Routes 53 zero series to rule masks, sparse series to Croston rules, and active series to ML.</div>
                         </li>
                         <li class="node-item">
-                            <div class="node-title">State 5 & 6-8: Features & Candidate Models</div>
-                            <div class="node-desc">Engineers payday lags, oil differencing; trains LSTM, LightGBM GBDT, and Moving Average Baselines.</div>
+                            <div class="node-title">Phase 3: Feature Engineering &amp; ML Training (States 5-8)</div>
+                            <div class="node-desc">Engineers payday lags &amp; Delta Oil. Trains PyTorch LSTM (smooth staples), LightGBM GBDT (promo spikes), and Moving Average Baselines.</div>
                         </li>
                         <li class="node-item">
-                            <div class="node-title">State 9 & 10: Rolling Backtest & Mediator</div>
-                            <div class="node-desc">Evaluates historical 16-day RMSLE errors; Mediator dynamically selects or soft-max ensembles model outputs.</div>
+                            <div class="node-title">Phase 4: Rolling Backtest &amp; Inventory Mediator (States 9-10)</div>
+                            <div class="node-desc">Evaluates historical 16-day RMSLE errors. Mediator assigns winning model (or ensemble) to output Reorder Point (ROP) stock purchase orders.</div>
                         </li>
                     </ul>
                 </div>
