@@ -703,48 +703,39 @@
             </div>
         </div>
 
-        <!-- SLIDE 5: PROPOSED SOLUTION - ADAPTIVE MULTI-MODEL ENGINE -->
+        <!-- SLIDE 5: PROPOSED SOLUTION - ADAPTIVE MULTI-MODEL ARCHITECTURE FLOWCHART -->
         <div class="slide" id="slide-5">
             <div class="slide-header">
                 <div>
                     <div class="deliverable-badge">Deliverable 2 · Proposed Solution</div>
-                    <h2 class="slide-title">Solving Demand Multiplicity via Adaptive Mediation</h2>
+                    <h2 class="slide-title">End-to-End Model Architecture & Mediation Flow</h2>
                 </div>
-                <div class="slide-subtitle">Matching each product category to its ideal machine learning architecture.</div>
+                <div class="slide-subtitle">Unified pipeline from dashboard requests down through profiling, candidates, backtests, and AI explanation.</div>
             </div>
-            <div class="content-grid grid-3">
-                <div class="card">
-                    <div class="card-meta">Engine 1</div>
-                    <h3 class="card-title">LSTM Deep Learning</h3>
-                    <div class="card-body">
-                        <p>Sequence-to-sequence model (60 past days input $\rightarrow$ 16 future days output). Excels at capturing complex temporal sequences in high-volume, smooth series.</p>
-                        <div class="stat-box">
-                            <div class="stat-value">60 Days</div>
-                            <div class="stat-label">Temporal Window</div>
-                        </div>
-                    </div>
+            <div class="diagram-split-container">
+                <div class="diagram-image-box">
+                    <img src="../images/model_overview_flowchart.svg" alt="DemandPilot End-to-End Model Architecture Flowchart">
                 </div>
-                <div class="card">
-                    <div class="card-meta">Engine 2</div>
-                    <h3 class="card-title">GBDT (LightGBM/XGBoost)</h3>
-                    <div class="card-body">
-                        <p>Gradient boosted trees trained on tabular lag features, calendar indicators, and promo leads. Superior handling of abrupt promotional spikes and global store pooling.</p>
-                        <div class="stat-box">
-                            <div class="stat-value">LightGBM</div>
-                            <div class="stat-label">Tabular Engine</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="card terracotta-card">
-                    <div class="card-meta">Engine 3 & Rules</div>
-                    <h3 class="card-title">Mediator & Zero Masks</h3>
-                    <div class="card-body">
-                        <p>Historical rolling backtests (State 9) evaluate RMSLE. The Mediator (State 10) dynamically routes each series or applies inverse-variance ensemble weights.</p>
-                        <div class="stat-box" style="background: rgba(255,255,255,0.15); border-left-color: #fff;">
-                            <div class="stat-value" style="color: #fff;">53</div>
-                            <div class="stat-label" style="color: #fff;">Hardcoded Zero Series</div>
-                        </div>
-                    </div>
+                <div class="diagram-text-box">
+                    <div class="card-meta">Model Pipeline Breakdown</div>
+                    <ul class="node-list">
+                        <li class="node-item">
+                            <div class="node-title">1. Dashboard &amp; API Orchestration</div>
+                            <div class="node-desc">Next.js 14 frontend triggers FastAPI microservice requests; Redis caches precomputed predictions.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">2. Demand Intelligence Profiler</div>
+                            <div class="node-desc">Evaluates volatility (CV), zero ratios (53 bypass series), and promo elasticity per series.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">3. Feature Matrix &amp; Candidate Models</div>
+                            <div class="node-desc">Engineers payday lags &amp; Delta Oil; feeds PyTorch LSTM (staples), LightGBM GBDT (promos), and Baselines.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">4. Historical Backtest &amp; Mediator</div>
+                            <div class="node-desc">Evaluates 16-day rolling RMSLE errors; Mediator assigns single best model or weighted ensemble to generate stock ROP.</div>
+                        </li>
+                    </ul>
                 </div>
             </div>
         </div>

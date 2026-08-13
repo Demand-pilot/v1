@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1150" width="100%" height="100%">
+  <defs>
+    <style>
+      .bg { fill: #faf8f5; }
+      .box { fill: #ffffff; stroke: #e2d9cd; stroke-width: 2; rx: 8px; }
+      .box-accent { fill: #eee8df; stroke: #d8cbb9; stroke-width: 2; rx: 8px; }
+      .box-terracotta { fill: #c45d3e; stroke: #a84b30; stroke-width: 2; rx: 8px; }
+      .title { font-family: 'Playfair Display', Georgia, serif; font-weight: 700; fill: #2d2a26; }
+      .subtitle { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; fill: #635e58; }
+      .label-mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; fill: #c45d3e; text-transform: uppercase; letter-spacing: 1px; }
+      .label-white { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; font-weight: 600; fill: #ffffff; }
+      .text-body { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 12px; fill: #2d2a26; }
+      .text-muted { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 11px; fill: #635e58; }
+      .arrow { stroke: #c45d3e; stroke-width: 2.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .arrow-head { fill: #c45d3e; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" class="arrow-head" />
+    </marker>
+  </defs>
+
+  <rect width="100%" height="100%" class="bg"/>
+
+  <!-- Header -->
+  <text x="450" y="45" text-anchor="middle" class="title" font-size="22">DemandPilot — End-to-End Model Architecture</text>
+  <text x="450" y="70" text-anchor="middle" class="subtitle">Multi-Model Demand Profiling, Rolling Backtest &amp; Mediator Execution Flow</text>
+
+  <!-- Node 1: User / Dashboard -->
+  <rect x="150" y="95" width="600" height="55" class="box"/>
+  <text x="450" y="118" text-anchor="middle" class="label-mono">1. USER / DASHBOARD INTERFACE</text>
+  <text x="450" y="138" text-anchor="middle" class="text-body">Next.js 14 App Router • Three.js 3D Store Map • Chart.js Interactive Dashboards</text>
+
+  <line x1="450" y1="150" x2="450" y2="175" class="arrow" marker-end="url(#arrow)"/>
+
+  <!-- Node 2: API / Orchestrator -->
+  <rect x="150" y="175" width="600" height="55" class="box-accent"/>
+  <text x="450" y="198" text-anchor="middle" class="label-mono">2. API / ORCHESTRATION LAYER</text>
+  <text x="450" y="218" text-anchor="middle" class="text-body">FastAPI Async Backend • Request Routing • Workflow Control • Redis Session Cache</text>
+
+  <line x1="450" y1="230" x2="450" y2="255" class="arrow" marker-end="url(#arrow)"/>
+
+  <!-- Node 3: AI / Agent Layer -->
+  <rect x="150" y="255" width="600" height="55" class="box"/>
+  <text x="450" y="278" text-anchor="middle" class="label-mono">3. AI / CONVERSATIONAL AGENT LAYER</text>
+  <text x="450" y="298" text-anchor="middle" class="text-body">Grounded LLM RAG Pipeline • Store Knowledge Search • Zero Hallucination Verification Gate</text>
+
+  <line x1="450" y1="310" x2="450" y2="335" class="arrow" marker-end="url(#arrow)"/>
+
+  <!-- Node 4: Demand Intelligence / Profiler -->
+  <rect x="150" y="335" width="600" height="65" class="box-accent"/>
+  <text x="450" y="358" text-anchor="middle" class="label-mono">4. DEMAND INTELLIGENCE &amp; PROFILER</text>
+  <text x="450" y="380" text-anchor="middle" class="text-muted">Series Length • Missingness • Zero Ratio (53 Bypass) • Volatility CV • Seasonality • Promo Elasticity</text>
+
+  <line x1="450" y1="400" x2="450" y2="425" class="arrow" marker-end="url(#arrow)"/>
+
+  <!-- Node 5: Feature Engineering -->
+  <rect x="150" y="425" width="600" height="75" class="box"/>
+  <text x="450" y="448" text-anchor="middle" class="label-mono">5. FEATURE ENGINEERING MATRIX</text>
+  <text x="250" y="475" text-anchor="middle" class="text-body">Temporal: Paydays &amp; Lags</text>
+  <text x="450" y="475" text-anchor="middle" class="text-body">Promotion: Leads &amp; Rolling</text>
+  <text x="650" y="475" text-anchor="middle" class="text-body">Context: Store &amp; Δ Oil</text>
+
+  <line x1="450" y1="500" x2="450" y2="525" class="arrow" marker-end="url(#arrow)"/>
+
+  <!-- Node 6: Model Candidates Header -->
+  <rect x="300" y="525" width="300" height="35" class="box-accent"/>
+  <text x="450" y="548" text-anchor="middle" class="label-mono">6. MODEL CANDIDATE ENGINES</text>
+
+  <line x1="230" y1="560" x2="230" y2="585" class="arrow" marker-end="url(#arrow)"/>
+  <line x1="450" y1="560" x2="450" y2="585" class="arrow" marker-end="url(#arrow)"/>
+  <line x1="670" y1="560" x2="670" y2="585" class="arrow" marker-end="url(#arrow)"/>
+
+  <!-- 3 Candidate Model Boxes -->
+  <rect x="120" y="585" width="220" height="65" class="box"/>
+  <text x="230" y="610" text-anchor="middle" class="label-mono">PyTorch LSTM</text>
+  <text x="230" y="632" text-anchor="middle" class="text-muted">60-Day Lookback • Smooth Staples</text>
+
+  <rect x="340" y="585" width="220" height="65" class="box-terracotta"/>
+  <text x="450" y="610" text-anchor="middle" class="label-white">LightGBM / XGBoost GBDT</text>
+  <text x="450" y="632" text-anchor="middle" class="label-white" font-size="11px">Tabular Promo Multipliers</text>
+
+  <rect x="560" y="585" width="220" height="65" class="box"/>
+  <text x="670" y="610" text-anchor="middle" class="label-mono">Seasonal Baseline</text>
+  <text x="670" y="632" text-anchor="middle" class="text-muted">Moving Avg / Croston Rules</text>
+
+  <line x1="230" y1="650" x2="450" y2="675" class="arrow" marker-end="url(#arrow)"/>
+  <line x1="450" y1="650" x2="450" y2="675" class="arrow" marker-end="url(#arrow)"/>
+  <line x1="670" y1="650" x2="450" y2="675" class="arrow" marker-end="url(#arrow)"/>
+
+  <!-- Node 7: Historical Backtest Engine -->
+  <rect x="150" y="675" width="600" height="55" class="box-accent"/>
+  <text x="450" y="698" text-anchor="middle" class="label-mono">7. HISTORICAL BACKTEST ENGINE</text>
+  <text x="450" y="718" text-anchor="middle" class="text-body">Rolling 16-Day Validation Window • Evaluates RMSLE Error per Series</text>
+
+  <line x1="450" y1="730" x2="450" y2="755" class="arrow" marker-end="url(#arrow)"/>
+
+  <!-- Node 8: Mediator -->
+  <rect x="150" y="755" width="600" height="75" class="box"/>
+  <text x="450" y="778" text-anchor="middle" class="label-mono">8. MEDIATOR ROUTING MODULE</text>
+  <text x="300" y="810" text-anchor="middle" class="text-body">Single Best Model Selector</text>
+  <text x="600" y="810" text-anchor="middle" class="text-body">Weighted Soft-Max Ensemble</text>
+
+  <line x1="450" y1="830" x2="450" y2="855" class="arrow" marker-end="url(#arrow)"/>
+
+  <!-- Node 9: Final Forecast -->
+  <rect x="250" y="855" width="400" height="50" class="box-terracotta"/>
+  <text x="450" y="885" text-anchor="middle" class="label-white">9. FINAL 16-DAY DAILY FORECAST</text>
+
+  <line x1="450" y1="905" x2="450" y2="930" class="arrow" marker-end="url(#arrow)"/>
+
+  <!-- Node 10: Stock Recommendation -->
+  <rect x="200" y="930" width="500" height="50" class="box-accent"/>
+  <text x="450" y="955" text-anchor="middle" class="label-mono">10. INVENTORY REPLENISHMENT (ROP &amp; SS)</text>
+
+  <line x1="450" y1="980" x2="450" y2="1005" class="arrow" marker-end="url(#arrow)"/>
+
+  <!-- Node 11: AI Explanation & User Loop -->
+  <rect x="200" y="1005" width="500" height="50" class="box"/>
+  <text x="450" y="1030" text-anchor="middle" class="text-body">11. AI EXPLANATION → USER STORE MANAGER</text>
+
+</svg>
