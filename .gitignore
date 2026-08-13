@@ -1,0 +1,15 @@
+# Data files exceeding GitHub size limits
+data/train.csv
+data/*.csv
+
+# Node & Python dependencies
+node_modules/
+__pycache__/
+*.pyc
+.env
+.env.local
+*.log
+
+# IDE & OS temporary files
+.DS_Store
+Thumbs.db

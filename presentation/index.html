@@ -1,0 +1,1313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DemandPilot — Enterprise AI for Retail Demand & Stock Optimization (AI for Business)</title>
+    <!-- Google Fonts: Playfair Display (Serif) & Plus Jakarta Sans (Clean Body) & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Chart.js for Visual Data Representations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-primary: #faf8f5;
+            --bg-secondary: #eee8df;
+            --bg-card: #ffffff;
+            --text-primary: #2d2a26;
+            --text-secondary: #635e58;
+            --text-muted: #8c857b;
+            --accent-terracotta: #c45d3e;
+            --accent-hover: #a84b30;
+            --accent-soft: rgba(196, 93, 62, 0.08);
+            --border-color: #e2d9cd;
+            --border-accent: #d8cbb9;
+            --shadow-subtle: 0 10px 30px rgba(45, 42, 38, 0.04);
+            --shadow-card: 0 15px 35px rgba(45, 42, 38, 0.06);
+            --font-heading: 'Playfair Display', Georgia, serif;
+            --font-body: 'Plus Jakarta Sans', -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+            --transition-smooth: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Presentation Stage */
+        #deck-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            visibility: hidden;
+            transform: scale(0.98) translateY(15px);
+            transition: var(--transition-smooth);
+            padding: 3rem 4.5rem 4rem 4.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            overflow-y: auto;
+        }
+
+        .slide.active {
+            opacity: 1;
+            visibility: visible;
+            transform: scale(1) translateY(0);
+        }
+
+        /* Slide Header */
+        .slide-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.85rem;
+        }
+
+        .slide-category {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: var(--accent-terracotta);
+            font-weight: 600;
+            margin-bottom: 0.2rem;
+        }
+
+        .slide-title {
+            font-family: var(--font-heading);
+            font-size: 2rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            letter-spacing: -0.01em;
+            line-height: 1.2;
+        }
+
+        .slide-subtitle {
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+            font-weight: 400;
+            max-width: 500px;
+            text-align: right;
+        }
+
+        /* Content Layout Grids */
+        .content-grid {
+            display: grid;
+            gap: 1.25rem;
+            flex-grow: 1;
+            align-content: center;
+        }
+
+        .grid-2 { grid-template-columns: 1fr 1fr; }
+        .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+        .grid-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+        /* Warm Minimal Cards */
+        .card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.35rem;
+            box-shadow: var(--shadow-subtle);
+            transition: var(--transition-smooth);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .card:hover {
+            border-color: var(--border-accent);
+            box-shadow: var(--shadow-card);
+            transform: translateY(-2px);
+        }
+
+        .card.accent-card {
+            background-color: var(--bg-secondary);
+            border-color: var(--border-accent);
+        }
+
+        .card.terracotta-card {
+            background-color: var(--accent-terracotta);
+            color: #ffffff;
+            border: none;
+        }
+
+        .card.terracotta-card h3, 
+        .card.terracotta-card p,
+        .card.terracotta-card .card-meta,
+        .card.terracotta-card li {
+            color: #ffffff !important;
+        }
+
+        .card-title {
+            font-family: var(--font-heading);
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.55rem;
+            color: var(--text-primary);
+        }
+
+        .card-body {
+            font-size: 0.86rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .card-body p + p {
+            margin-top: 0.55rem;
+        }
+
+        .card-meta {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--accent-terracotta);
+            margin-bottom: 0.35rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        /* Stat Boxes */
+        .stat-box {
+            display: flex;
+            flex-direction: column;
+            padding: 0.85rem 1.1rem;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            border-left: 3px solid var(--accent-terracotta);
+            margin-top: 0.65rem;
+        }
+
+        .stat-value {
+            font-family: var(--font-heading);
+            font-size: 1.85rem;
+            font-weight: 700;
+            color: var(--accent-terracotta);
+            line-height: 1;
+        }
+
+        .stat-label {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            margin-top: 0.3rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Diagram & Image Layouts with Detailed Explanations */
+        .diagram-split-container {
+            display: grid;
+            grid-template-columns: 1.15fr 1fr;
+            gap: 1.35rem;
+            align-items: stretch;
+            flex-grow: 1;
+        }
+
+        .diagram-image-box {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.85rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: var(--shadow-subtle);
+            overflow: hidden;
+        }
+
+        .diagram-image-box img {
+            max-width: 100%;
+            max-height: 490px;
+            object-fit: contain;
+            border-radius: 4px;
+        }
+
+        .diagram-text-box {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-accent);
+            border-radius: 8px;
+            padding: 1.35rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            overflow-y: auto;
+            max-height: 510px;
+        }
+
+        .node-list {
+            list-style: none;
+            margin-top: 0.65rem;
+        }
+
+        .node-item {
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px dashed var(--border-color);
+        }
+
+        .node-item:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .node-title {
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: var(--accent-terracotta);
+            margin-bottom: 0.2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .node-desc {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            line-height: 1.45;
+        }
+
+        /* Chart Canvas Containers */
+        .chart-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.15rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            min-height: 250px;
+        }
+
+        .chart-title {
+            font-family: var(--font-heading);
+            font-size: 0.95rem;
+            color: var(--text-primary);
+            margin-bottom: 0.65rem;
+            text-align: center;
+        }
+
+        /* Formula Card Styling (Plain Text, Human Readable) */
+        .formula-box {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-accent);
+            border-left: 4px solid var(--accent-terracotta);
+            border-radius: 6px;
+            padding: 0.85rem 1rem;
+            margin: 0.65rem 0;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1.4;
+        }
+
+        /* Navigation Controls */
+        .deck-controls {
+            position: fixed;
+            bottom: 1.5rem;
+            right: 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            z-index: 100;
+            background: rgba(250, 248, 245, 0.94);
+            backdrop-filter: blur(8px);
+            padding: 0.35rem 0.85rem;
+            border-radius: 50px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-subtle);
+        }
+
+        .nav-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+            font-size: 0.9rem;
+        }
+
+        .nav-btn:hover {
+            background: var(--accent-terracotta);
+            color: #ffffff;
+            border-color: var(--accent-terracotta);
+        }
+
+        .print-btn {
+            background: var(--accent-terracotta);
+            color: #ffffff;
+            border: none;
+            padding: 0.35rem 0.85rem;
+            border-radius: 50px;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+            font-weight: 500;
+        }
+
+        .print-btn:hover {
+            background: var(--accent-hover);
+        }
+
+        .slide-counter {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            min-width: 55px;
+            text-align: center;
+        }
+
+        /* Progress Bar */
+        .progress-bar-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 4px;
+            background: var(--bg-secondary);
+            z-index: 100;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: var(--accent-terracotta);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        /* Title Slide Layout */
+        .slide-title-deck {
+            justify-content: center;
+            align-items: flex-start;
+            padding: 4.5rem 6.5rem;
+        }
+
+        .title-hero { max-width: 940px; }
+
+        .title-hero .tag {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+            color: var(--accent-terracotta);
+            background: var(--accent-soft);
+            padding: 0.35rem 0.85rem;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+            border: 1px solid rgba(196, 93, 62, 0.2);
+        }
+
+        .title-hero h1 {
+            font-family: var(--font-heading);
+            font-size: 3.6rem;
+            font-weight: 700;
+            line-height: 1.1;
+            letter-spacing: -0.02em;
+            margin-bottom: 1.15rem;
+            color: var(--text-primary);
+        }
+
+        .title-hero h1 span {
+            font-style: italic;
+            color: var(--accent-terracotta);
+            font-weight: 400;
+        }
+
+        .title-hero p {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            max-width: 740px;
+            margin-bottom: 2.25rem;
+        }
+
+        .title-footer {
+            display: flex;
+            gap: 2.5rem;
+            border-top: 1px solid var(--border-color);
+            padding-top: 1.15rem;
+            width: 100%;
+        }
+
+        .title-meta-item { display: flex; flex-direction: column; }
+
+        .title-meta-label {
+            font-family: var(--font-mono);
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+        }
+
+        .title-meta-val {
+            font-weight: 600;
+            font-size: 0.88rem;
+            color: var(--text-primary);
+            margin-top: 0.15rem;
+        }
+
+        /* Deliverable Checklist Badges */
+        .deliverable-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-family: var(--font-mono);
+            font-size: 0.68rem;
+            padding: 0.18rem 0.45rem;
+            border-radius: 4px;
+            background: rgba(196, 93, 62, 0.1);
+            color: var(--accent-terracotta);
+            margin-bottom: 0.45rem;
+            font-weight: 600;
+        }
+
+        ul.custom-list { list-style: none; margin-top: 0.35rem; }
+        ul.custom-list li {
+            position: relative;
+            padding-left: 1.25rem;
+            margin-bottom: 0.45rem;
+            font-size: 0.84rem;
+            color: var(--text-secondary);
+            line-height: 1.45;
+        }
+        ul.custom-list li::before {
+            content: "—";
+            position: absolute;
+            left: 0;
+            color: var(--accent-terracotta);
+            font-weight: 700;
+        }
+
+        /* Keyboard Hint */
+        .key-hint {
+            position: fixed;
+            bottom: 1.5rem;
+            left: 2.5rem;
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .key-badge {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            padding: 0.1rem 0.35rem;
+            border-radius: 4px;
+            color: var(--text-primary);
+        }
+
+        /* PDF / PPT Print Media Rules */
+        @media print {
+            body { overflow: visible !important; background: #fff !important; }
+            #deck-container { display: block !important; height: auto !important; }
+            .slide {
+                position: relative !important;
+                opacity: 1 !important;
+                visibility: visible !important;
+                transform: none !important;
+                page-break-after: always !important;
+                height: 100vh !important;
+                width: 100vw !important;
+                padding: 2.5rem !important;
+            }
+            .deck-controls, .progress-bar-container, .key-hint { display: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="progress-bar-container">
+        <div class="progress-bar" id="progress-bar"></div>
+    </div>
+
+    <div id="deck-container">
+
+        <!-- SLIDE 1: TITLE & COVER -->
+        <div class="slide slide-title-deck active" id="slide-1">
+            <div class="title-hero">
+                <span class="tag">AI for Business Track · 24-Hour AI Hackathon</span>
+                <h1>DemandPilot <span>Demand Intelligence</span> Engine</h1>
+                <p>An enterprise-grade, adaptive multi-model forecasting system for retail supply chains. Integrates deep learning (LSTM), gradient boosting (GBDT), automated demand profiling, empirical shock feature engineering, and grounded AI agent explanations.</p>
+                
+                <div style="display: flex; gap: 0.65rem; flex-wrap: wrap; margin-bottom: 1.75rem;">
+                    <span class="deliverable-badge">✓ Problem Understanding</span>
+                    <span class="deliverable-badge">✓ Proposed Solution</span>
+                    <span class="deliverable-badge">✓ Target Users</span>
+                    <span class="deliverable-badge">✓ Tech Stack</span>
+                    <span class="deliverable-badge">✓ Development Plan</span>
+                    <span class="deliverable-badge">✓ Design / Workflow</span>
+                </div>
+
+                <div class="title-footer">
+                    <div class="title-meta-item">
+                        <span class="title-meta-label">Project Name</span>
+                        <span class="title-meta-val">DemandPilot</span>
+                    </div>
+                    <div class="title-meta-item">
+                        <span class="title-meta-label">Domain Track</span>
+                        <span class="title-meta-val">AI for Business</span>
+                    </div>
+                    <div class="title-meta-item">
+                        <span class="title-meta-label">Domain Scope</span>
+                        <span class="title-meta-val">54 Stores × 33 Families (1,782 Series)</span>
+                    </div>
+                    <div class="title-meta-item">
+                        <span class="title-meta-label">Forecast Horizon</span>
+                        <span class="title-meta-val">16 Days (Aug 16 – Aug 31)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 2: PROBLEM UNDERSTANDING - SCALE & HETEROGENEITY -->
+        <div class="slide" id="slide-2">
+            <div class="slide-header">
+                <div>
+                    <div class="deliverable-badge">Deliverable 1 · Problem Understanding</div>
+                    <h2 class="slide-title">Eliminating Single-Model Bias Across 1,782 Series</h2>
+                </div>
+                <div class="slide-subtitle">Solving the structural failure of applying one rigid ML model across diverse retail products.</div>
+            </div>
+            <div class="content-grid grid-3">
+                <div class="card">
+                    <div class="card-meta">Scale Challenge</div>
+                    <h3 class="card-title">1,782 Parallel Series</h3>
+                    <div class="card-body">
+                        <p>Forecasting daily unit sales across 54 supermarket stores in 22 Ecuadorian cities and 33 product families over a 16-day horizon.</p>
+                        <div class="stat-box">
+                            <div class="stat-value">3.0M+</div>
+                            <div class="stat-label">Historical Train Records</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-meta">Structural Flaw</div>
+                    <h3 class="card-title">Single Model Bias</h3>
+                    <div class="card-body">
+                        <p>Applying a uniform global model (e.g. standard LSTM or GBDT) introduces severe error because retail demand ranges from smooth staples to extreme promotional spikes.</p>
+                        <div class="stat-box">
+                            <div class="stat-value">53</div>
+                            <div class="stat-label">Permanent Zero Series</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card accent-card">
+                    <div class="card-meta">Demand Diversity</div>
+                    <h3 class="card-title">Multi-Pattern Demand</h3>
+                    <div class="card-body">
+                        <ul class="custom-list">
+                            <li><strong>High Volume Staples</strong>: Grocery I & Beverages.</li>
+                            <li><strong>Elastic Promo Items</strong>: School Supplies.</li>
+                            <li><strong>Intermittent / Zero Series</strong>: Books & Baby Care.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 3: PROBLEM UNDERSTANDING - MACRO SHOCKS & PAYDAYS -->
+        <div class="slide" id="slide-3">
+            <div class="slide-header">
+                <div>
+                    <div class="deliverable-badge">Deliverable 1 · Problem Understanding</div>
+                    <h2 class="slide-title">Insulating Inventory Against Macro Shocks & Paydays</h2>
+                </div>
+                <div class="slide-subtitle">Preventing costly stockouts during 20% earthquake panics and bi-weekly payday rushes.</div>
+            </div>
+            <div class="content-grid grid-2">
+                <div class="chart-box">
+                    <div class="chart-title">2016 Earthquake Category Sales Increase (%)</div>
+                    <canvas id="earthquakeChart" style="max-height: 220px;"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-meta">Empirical Findings</div>
+                    <h3 class="card-title">Shock & Payday Dynamics</h3>
+                    <div class="card-body">
+                        <ul class="custom-list">
+                            <li><strong>2016 Earthquake (+20.23%)</strong>: Magnitude 7.8 quake on April 16, 2016 caused massive panic buying of Personal Care (+41.7%) and Grocery I (+39.6%).</li>
+                            <li><strong>Bi-Weekly Payday Peak (+8.0%)</strong>: Sales surge on the <strong>day after payday (16th & 1st)</strong>. Weekday paydays boost sales (+7.5% Wed), while weekend paydays show 0% lift.</li>
+                            <li><strong>Calendar Closures</strong>: Christmas Day (Dec 25) is missing entirely. On Jan 1st, <strong>only Store 25</strong> operates.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 4: PROBLEM UNDERSTANDING - STORE LIFESPANS & OIL SPURIOUS TREND -->
+        <div class="slide" id="slide-4">
+            <div class="slide-header">
+                <div>
+                    <div class="deliverable-badge">Deliverable 1 · Problem Understanding</div>
+                    <h2 class="slide-title">Eliminating Data Quality Traps & Spurious Oil Trends</h2>
+                </div>
+                <div class="slide-subtitle">Cleaning pre-opening zero noise and differencing oil price trends to prevent tree overfitting.</div>
+            </div>
+            <div class="content-grid grid-2">
+                <div class="chart-box">
+                    <div class="chart-title">Pre-Opening Zero Sales Days by Store</div>
+                    <canvas id="storeOpeningChart" style="max-height: 220px;"></canvas>
+                </div>
+                <div class="card accent-card">
+                    <div class="card-meta">Data Quality Traps</div>
+                    <h3 class="card-title">Pre-Opening Zeroes & Spurious Oil</h3>
+                    <div class="card-body">
+                        <ul class="custom-list">
+                            <li><strong>Pre-Opening Zeroes</strong>: Store 52 opened 1,570 days after dataset start. Training on full timelines introduces thousands of artificial zero rows.</li>
+                            <li><strong>Spurious Oil Correlation (-0.6280)</strong>: Daily oil price correlation is negative simply because sales grew while oil crashed (2013-2017). Inside single years, correlation is <strong>~0.0011</strong>.</li>
+                            <li><strong>Pipeline Action</strong>: Truncate pre-opening history and use first-differenced Delta Oil.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 5: PROPOSED SOLUTION - ADAPTIVE MULTI-MODEL ENGINE -->
+        <div class="slide" id="slide-5">
+            <div class="slide-header">
+                <div>
+                    <div class="deliverable-badge">Deliverable 2 · Proposed Solution</div>
+                    <h2 class="slide-title">Solving Demand Multiplicity via Adaptive Mediation</h2>
+                </div>
+                <div class="slide-subtitle">Matching each product category to its ideal machine learning architecture.</div>
+            </div>
+            <div class="content-grid grid-3">
+                <div class="card">
+                    <div class="card-meta">Engine 1</div>
+                    <h3 class="card-title">LSTM Deep Learning</h3>
+                    <div class="card-body">
+                        <p>Sequence-to-sequence model (60 past days input $\rightarrow$ 16 future days output). Excels at capturing complex temporal sequences in high-volume, smooth series.</p>
+                        <div class="stat-box">
+                            <div class="stat-value">60 Days</div>
+                            <div class="stat-label">Temporal Window</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-meta">Engine 2</div>
+                    <h3 class="card-title">GBDT (LightGBM/XGBoost)</h3>
+                    <div class="card-body">
+                        <p>Gradient boosted trees trained on tabular lag features, calendar indicators, and promo leads. Superior handling of abrupt promotional spikes and global store pooling.</p>
+                        <div class="stat-box">
+                            <div class="stat-value">LightGBM</div>
+                            <div class="stat-label">Tabular Engine</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card terracotta-card">
+                    <div class="card-meta">Engine 3 & Rules</div>
+                    <h3 class="card-title">Mediator & Zero Masks</h3>
+                    <div class="card-body">
+                        <p>Historical rolling backtests (State 9) evaluate RMSLE. The Mediator (State 10) dynamically routes each series or applies inverse-variance ensemble weights.</p>
+                        <div class="stat-box" style="background: rgba(255,255,255,0.15); border-left-color: #fff;">
+                            <div class="stat-value" style="color: #fff;">53</div>
+                            <div class="stat-label" style="color: #fff;">Hardcoded Zero Series</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 6: PROPOSED SOLUTION - CASE STUDY & PIPELINE DIAGRAM -->
+        <div class="slide" id="slide-6">
+            <div class="slide-header">
+                <div>
+                    <div class="deliverable-badge">Deliverable 2 · Solution Case Study & Flow</div>
+                    <h2 class="slide-title">Capturing Promo Spikes: Sierra School Season Flow</h2>
+                </div>
+                <div class="slide-subtitle">Solving promotional underprediction in sensitive categories via dynamic GBDT routing.</div>
+            </div>
+            <div class="diagram-split-container">
+                <div class="diagram-image-box">
+                    <img src="../images/_-%20visual%20selection%20%283%29.png" alt="Multi-Model Demand Mediation Architecture Flowchart">
+                </div>
+                <div class="diagram-text-box">
+                    <div class="card-meta">Case Study & Mediation Workflow</div>
+                    <ul class="node-list">
+                        <li class="node-item">
+                            <div class="node-title">1. Demand Profiler & Quality Routing</div>
+                            <div class="node-desc">Evaluates series length, zero ratio, and promo elasticity. Identifies 53 zero series for hardcoded bypass.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">2. Sierra School Season Case Study</div>
+                            <div class="node-desc">Late August back-to-school season shows 0.67 promo elasticity. Test set has double promo density (44.1% vs 20.4%).</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">3. Model Candidates & Backtesting</div>
+                            <div class="node-desc">Trains LSTM for smooth staples and LightGBM GBDT for promo spikes; evaluates 16-day rolling backtest RMSLE.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">4. Mediator & Replenishment Output</div>
+                            <div class="node-desc">Mediator picks LightGBM for promo items (+145% surge accuracy), triggering automated ERP reorder points.</div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 7: TARGET USERS & STAKEHOLDER PERSONAS -->
+        <div class="slide" id="slide-7">
+            <div class="slide-header">
+                <div>
+                    <div class="deliverable-badge">Deliverable 3 · Target Users</div>
+                    <h2 class="slide-title">Aligning Workflows Across Operational & Executive Users</h2>
+                </div>
+                <div class="slide-subtitle">Solving communication barriers between technical ML forecasts and retail store operations.</div>
+            </div>
+            <div class="content-grid grid-3">
+                <div class="card">
+                    <div class="card-meta">Operational User</div>
+                    <h3 class="card-title">Store Managers</h3>
+                    <div class="card-body">
+                        <ul class="custom-list">
+                            <li><strong>Goal</strong>: Daily stock order adjustments & stockout prevention.</li>
+                            <li><strong>Interface</strong>: Conversational AI Agent for natural language queries ("Why is School Supplies spiking?").</li>
+                            <li><strong>Key Value</strong>: Zero out-of-stock during payday peaks.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card accent-card">
+                    <div class="card-meta">Tactical User</div>
+                    <h3 class="card-title">Supply Chain Planners</h3>
+                    <div class="card-body">
+                        <ul class="custom-list">
+                            <li><strong>Goal</strong>: Regional warehouse distribution & safety stock calculations.</li>
+                            <li><strong>Interface</strong>: 16-day forecast dashboard with automated Reorder Point (ROP) alerts.</li>
+                            <li><strong>Key Value</strong>: Reduced holding costs & balanced inventory.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-meta">Strategic User</div>
+                    <h3 class="card-title">Executive Leadership</h3>
+                    <div class="card-body">
+                        <ul class="custom-list">
+                            <li><strong>Goal</strong>: Category revenue growth & promotion ROI analysis.</li>
+                            <li><strong>Interface</strong>: Three.js 3D regional demand map & high-level performance KPIs.</li>
+                            <li><strong>Key Value</strong>: Macro demand visibility across Ecuador.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 8: TECH STACK & ARCHITECTURE RESPONSIBILITIES -->
+        <div class="slide" id="slide-8">
+            <div class="slide-header">
+                <div>
+                    <div class="deliverable-badge">Deliverable 4 · Tech Stack</div>
+                    <h2 class="slide-title">Low-Latency Infrastructure for Real-Time Scaling</h2>
+                </div>
+                <div class="slide-subtitle">Solving technical bottlenecks with a decoupled, high-performance web & AI stack.</div>
+            </div>
+            <div class="content-grid grid-4">
+                <div class="card">
+                    <div class="card-meta">Presentation Layer</div>
+                    <h3 class="card-title">Next.js 14 & Three.js</h3>
+                    <div class="card-body">
+                        <ul class="custom-list">
+                            <li><strong>Next.js 14 App Router</strong>: Server-rendered reactive UI for sub-100ms dashboard loads.</li>
+                            <li><strong>Three.js / WebGL</strong>: 3D interactive store maps showing regional stock levels.</li>
+                            <li><strong>Chart.js & Tailwind</strong>: Responsive data visuals matching Warm Minimal design.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-meta">Orchestration & Agent</div>
+                    <h3 class="card-title">FastAPI & LangChain</h3>
+                    <div class="card-body">
+                        <ul class="custom-list">
+                            <li><strong>FastAPI (Python 3.11)</strong>: Async microservices handling 1,782 series inferences.</li>
+                            <li><strong>LangChain RAG</strong>: Grounded LLM Agent connecting queries to SQL model registry.</li>
+                            <li><strong>Redis Cache</strong>: Low-latency session state & pre-computed forecast caching.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card accent-card">
+                    <div class="card-meta">Forecasting Core</div>
+                    <h3 class="card-title">LightGBM & PyTorch</h3>
+                    <div class="card-body">
+                        <ul class="custom-list">
+                            <li><strong>LightGBM & XGBoost</strong>: High-speed GBDT engines for tabular promo features.</li>
+                            <li><strong>PyTorch LSTM</strong>: Sequence-to-sequence deep learning for smooth temporal series.</li>
+                            <li><strong>Optuna & Scikit</strong>: Automatic hyperparameter tuning & baseline benchmarks.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-meta">Data & Storage</div>
+                    <h3 class="card-title">PostgreSQL & pgvector</h3>
+                    <div class="card-body">
+                        <ul class="custom-list">
+                            <li><strong>PostgreSQL + TimescaleDB</strong>: Optimized time-series storage & historical transactions.</li>
+                            <li><strong>pgvector Store</strong>: Semantic embedding storage for store knowledge & RAG.</li>
+                            <li><strong>Docker Containerization</strong>: Production-ready microservices deployment.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 9: 7-LAYER ENTERPRISE STACK ARCHITECTURE -->
+        <div class="slide" id="slide-9">
+            <div class="slide-header">
+                <div>
+                    <div class="deliverable-badge">Deliverable 6 · Design / Workflow</div>
+                    <h2 class="slide-title">Structuring End-to-End Enterprise Data Flow</h2>
+                </div>
+                <div class="slide-subtitle">Solving integration friction across presentation, intelligence, ML, and storage layers.</div>
+            </div>
+            <div class="diagram-split-container">
+                <div class="diagram-image-box">
+                    <img src="../images/_-%20visual%20selection.svg" alt="7-Layer Enterprise Stack Architecture">
+                </div>
+                <div class="diagram-text-box">
+                    <div class="card-meta">Architectural Layer Breakdown</div>
+                    <ul class="node-list">
+                        <li class="node-item">
+                            <div class="node-title">1. Presentation Layer (Top)</div>
+                            <div class="node-desc">Next.js 14 dashboard & Three.js 3D store visuals rendering real-time forecast widgets and inventory alerts.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">2. API & Orchestration Layer</div>
+                            <div class="node-desc">FastAPI backend coordinating requests between the user dashboard, AI agent, and forecasting core.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">3. AI / Agent Layer</div>
+                            <div class="node-desc">LLM explanation agent retrieving store knowledge from pgvector without numerical hallucination.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">4. Demand Intelligence Layer</div>
+                            <div class="node-desc">Automated Demand Profiler calculating series volatility (CV), zero ratio, and promo elasticity.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">5. Forecasting Engine</div>
+                            <div class="node-desc">Multi-model candidates: LSTM Deep Learning, GBDT (LightGBM), and Seasonal Baselines.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">6. Decision Engine & Data Storage</div>
+                            <div class="node-desc">Reorder point logic feeding inventory rules; PostgreSQL & TimescaleDB handling time-series storage.</div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 10: 10-STATE PIPELINE & MEDIATOR FLOW -->
+        <div class="slide" id="slide-10">
+            <div class="slide-header">
+                <div>
+                    <div class="deliverable-badge">Deliverable 6 · Design / Workflow</div>
+                    <h2 class="slide-title">Automating Pipeline Execution & Quality Mediation</h2>
+                </div>
+                <div class="slide-subtitle">Solving pipeline fragility through automated profiling, backtesting, and error routing.</div>
+            </div>
+            <div class="diagram-split-container">
+                <div class="diagram-image-box">
+                    <img src="../images/_-%20visual%20selection%20%281%29.svg" alt="10-State Data Pipeline & Backtest Mediator Flow">
+                </div>
+                <div class="diagram-text-box">
+                    <div class="card-meta">10 Pipeline States Breakdown</div>
+                    <ul class="node-list">
+                        <li class="node-item">
+                            <div class="node-title">State 1 & 2: Ingestion & Construction</div>
+                            <div class="node-desc">Unified cleaning of train.csv/oil.csv; constructing 1,782 store-family time series.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">State 3 & 4: Profiling & Quality Router</div>
+                            <div class="node-desc">Calculates zero ratio and directs inactive series to zero masks, sparse to Croston, standard to ML.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">State 5 & 6-8: Features & Candidate Models</div>
+                            <div class="node-desc">Engineers payday lags, oil differencing; trains LSTM, LightGBM GBDT, and Moving Average Baselines.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">State 9 & 10: Rolling Backtest & Mediator</div>
+                            <div class="node-desc">Evaluates historical 16-day RMSLE errors; Mediator dynamically selects or soft-max ensembles model outputs.</div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 11: OPERATIONAL DATA PIPELINE OPTIMIZATION -->
+        <div class="slide" id="slide-11">
+            <div class="slide-header">
+                <div>
+                    <div class="deliverable-badge">Deliverable 6 · Design / Workflow</div>
+                    <h2 class="slide-title">Transforming Empirical Shocks into Model Features</h2>
+                </div>
+                <div class="slide-subtitle">Solving model confusion by converting raw dataset anomalies into clean engineered inputs.</div>
+            </div>
+            <div class="diagram-split-container">
+                <div class="diagram-image-box">
+                    <img src="../images/_-%20visual%20selection%20%282%29.svg" alt="Empirical Data Findings to Pipeline Feature Mapping">
+                </div>
+                <div class="diagram-text-box">
+                    <div class="card-meta">6 Feature Transformation Mappings</div>
+                    <ul class="node-list">
+                        <li class="node-item">
+                            <div class="node-title">1. Holiday Closures $\rightarrow$ Zero Mask</div>
+                            <div class="node-desc">Post-processing hardcodes predictions to 0.0 for Christmas Day and Jan 1st (non-Store 25).</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">2. Late Openings $\rightarrow$ Date Truncation</div>
+                            <div class="node-desc">Truncates history before store opening date (e.g. Store 52) to eliminate zero-sales distortion.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">3. Earthquake Spike $\rightarrow$ Event Smoothing</div>
+                            <div class="node-desc">Adds 30-day emergency flag and target smoothing so models don't overfit annual April peaks.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">4. Payday Peak $\rightarrow$ Interaction Features</div>
+                            <div class="node-desc">Engineers `is_day_after_payday` (16th & 1st) and `is_payday` $\times$ `day_of_week` interaction flags.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">5. Spurious Oil $\rightarrow$ First Differencing</div>
+                            <div class="node-desc">Computes Delta Oil to remove macro trend bias while preserving short-term oil shocks.</div>
+                        </li>
+                        <li class="node-item">
+                            <div class="node-title">6. Zero Series $\rightarrow$ Zero Bypass</div>
+                            <div class="node-desc">Hardcodes 0.0 for 53 permanent zero series (e.g. Books in 28 stores), bypassing ML engines.</div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 12: GROUNDED CONVERSATIONAL AI AGENT -->
+        <div class="slide" id="slide-12">
+            <div class="slide-header">
+                <div>
+                    <div class="deliverable-badge">Deliverable 6 · Business Solution</div>
+                    <h2 class="slide-title">Bridging Decisions via Hallucination-Free Conversational AI</h2>
+                </div>
+                <div class="slide-subtitle">Solving executive distrust by grounding LLM responses in validated SQL forecast logs.</div>
+            </div>
+            <div class="content-grid grid-2">
+                <div class="card">
+                    <div class="card-meta">Zero Hallucination Architecture</div>
+                    <h3 class="card-title">Grounded RAG Execution Pipeline</h3>
+                    <div class="card-body">
+                        <p>The LLM agent operates strictly as an explanation and retrieval interface, separated from numerical model calculations:</p>
+                        <ul class="custom-list">
+                            <li><strong>Step 1: Intent Parsing</strong> — FastAPI Router extracts target store number, product family, and forecast date window from user text.</li>
+                            <li><strong>Step 2: Database & Vector Retrieval</strong> — Queries PostgreSQL database for exact sales numbers and pgvector store for local event context.</li>
+                            <li><strong>Step 3: Verification Gate</strong> — Compares retrieved values against actual model backtest records before constructing context.</li>
+                            <li><strong>Step 4: Natural Explanation</strong> — Synthesizes a human-readable explanation explaining why the forecast shifted.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card accent-card">
+                    <div class="card-meta">Real-World Store Manager Dialogue</div>
+                    <h3 class="card-title">Conversational AI Interface</h3>
+                    <div class="card-body">
+                        <div style="background: var(--bg-card); padding: 0.85rem; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom: 0.75rem;">
+                            <span style="font-family: var(--font-mono); font-size: 0.7rem; color: var(--accent-terracotta); font-weight: 700;">STORE MANAGER</span>
+                            <p style="font-size: 0.84rem; color: var(--text-primary); font-weight: 500; margin-top: 0.2rem;">"Why is School Supplies spiking by +145% at Store 14 in late August?"</p>
+                        </div>
+                        <div style="background: var(--bg-card); padding: 0.85rem; border-radius: 6px; border: 1px solid var(--border-color);">
+                            <span style="font-family: var(--font-mono); font-size: 0.7rem; color: #2d2a26; font-weight: 700;">DEMANDPILOT AI AGENT</span>
+                            <p style="font-size: 0.84rem; color: var(--text-secondary); margin-top: 0.2rem; line-height: 1.45;">"The +145% forecast surge is driven by two validated factors: (1) high test promotion density (44.1% in test vs 20.4% in historical train), and (2) the onset of the Sierra region back-to-school season. School Supplies has a 0.67 promo elasticity score. Model Engine Selected: LightGBM GBDT (RMSLE: 0.38)."</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 13: DECISION ENGINE & INVENTORY REPLENISHMENT RULES -->
+        <div class="slide" id="slide-13">
+            <div class="slide-header">
+                <div>
+                    <div class="deliverable-badge">Deliverable 2 & 6 · Business Solution</div>
+                    <h2 class="slide-title">Automating Supply Chain Action: Reorder & Stock Rules</h2>
+                </div>
+                <div class="slide-subtitle">Solving stockout losses and overstock holding costs via automated ERP replenishment.</div>
+            </div>
+            <div class="content-grid grid-3">
+                <div class="card">
+                    <div class="card-meta">Reorder Trigger</div>
+                    <h3 class="card-title">Reorder Point (ROP)</h3>
+                    <div class="card-body">
+                        <p>Triggers new purchase orders when store inventory drops below expected lead-time demand plus safety buffer:</p>
+                        <div class="formula-box">Reorder Point = (Average Daily Demand × Lead Time) + Safety Stock</div>
+                        <ul class="custom-list" style="margin-top: 0.4rem;">
+                            <li><strong>Average Daily Demand</strong>: DemandPilot 16-day forecast average.</li>
+                            <li><strong>Lead Time</strong>: Supplier delivery turnaround time in days.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-meta">Risk Buffer</div>
+                    <h3 class="card-title">Safety Stock (SS)</h3>
+                    <div class="card-body">
+                        <p>Buffers against forecast uncertainty and supplier delays during promotional surges:</p>
+                        <div class="formula-box">Safety Stock = Service Level Factor × Demand Variability × √(Lead Time)</div>
+                        <ul class="custom-list" style="margin-top: 0.4rem;">
+                            <li><strong>Service Factor</strong>: Targeted fulfillment confidence (e.g. 95% = 1.65).</li>
+                            <li><strong>Demand Variability</strong>: Standard deviation of model backtest errors.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card terracotta-card">
+                    <div class="card-meta">Business Impact</div>
+                    <h3 class="card-title">Inventory Optimization</h3>
+                    <div class="card-body">
+                        <ul class="custom-list">
+                            <li style="color: #fff;"><strong>Stockout Reduction</strong>: -35% stockout rate during peak payday cycles (16th & 1st).</li>
+                            <li style="color: #fff;"><strong>Overstock Minimization</strong>: Prevents excess inventory holding on 53 zero series.</li>
+                            <li style="color: #fff;"><strong>ERP Automation</strong>: Triggers automated purchase orders via Webhooks.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 14: DEVELOPMENT PLAN & 24-HOUR HACKATHON ROADMAP -->
+        <div class="slide" id="slide-14">
+            <div class="slide-header">
+                <div>
+                    <div class="deliverable-badge">Deliverable 5 · Development Plan</div>
+                    <h2 class="slide-title">24-Hour Hackathon Sprint Plan & Execution</h2>
+                </div>
+                <div class="slide-subtitle">Rapid engineering execution delivering a production-grade MVP within hackathon constraints.</div>
+            </div>
+            <div class="content-grid grid-4">
+                <div class="card">
+                    <div class="card-meta">Block 1 (Hours 0–6)</div>
+                    <h3 class="card-title">Data & Feature Pipeline</h3>
+                    <div class="card-body">
+                        <ul class="custom-list">
+                            <li>Data cleaning & oil price linear interpolation.</li>
+                            <li>Delta Oil differencing & payday feature matrix.</li>
+                            <li>Automated Demand Profiler engine build.</li>
+                            <li>53 zero-series rule mask implementation.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-meta">Block 2 (Hours 6–12)</div>
+                    <h3 class="card-title">ML Engines & Mediator</h3>
+                    <div class="card-body">
+                        <ul class="custom-list">
+                            <li>Train PyTorch LSTM sequence model.</li>
+                            <li>Train LightGBM & XGBoost GBDT models.</li>
+                            <li>Build 16-day rolling backtest harness.</li>
+                            <li>State 10 RMSLE Mediator module integration.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card accent-card">
+                    <div class="card-meta">Block 3 (Hours 12–18)</div>
+                    <h3 class="card-title">Backend API & AI Agent</h3>
+                    <div class="card-body">
+                        <ul class="custom-list">
+                            <li>FastAPI backend endpoints & Redis cache.</li>
+                            <li>LangChain LLM RAG Agent pipeline.</li>
+                            <li>pgvector store for store context retrieval.</li>
+                            <li>Zero hallucination verification gate test.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-meta">Block 4 (Hours 18–24)</div>
+                    <h3 class="card-title">Dashboard & Deployment</h3>
+                    <div class="card-body">
+                        <ul class="custom-list">
+                            <li>Next.js 14 responsive dashboard UI.</li>
+                            <li>Three.js 3D store demand visualizer.</li>
+                            <li>Chart.js real-time widget integration.</li>
+                            <li>Docker build & hackathon pitch presentation.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Slide Deck Controls -->
+    <div class="deck-controls">
+        <button class="nav-btn" id="prev-btn" title="Previous Slide (Left Arrow)">←</button>
+        <span class="slide-counter" id="slide-counter">01 / 14</span>
+        <button class="nav-btn" id="next-btn" title="Next Slide (Right Arrow)">→</button>
+        <button class="print-btn" onclick="window.print()">Export PDF / PPT</button>
+    </div>
+
+    <div class="key-hint">
+        <span class="key-badge">←</span> <span class="key-badge">→</span> Navigate Slides | <span class="key-badge">Space</span> Next
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const slides = document.querySelectorAll('.slide');
+            const prevBtn = document.getElementById('prev-btn');
+            const nextBtn = document.getElementById('next-btn');
+            const slideCounter = document.getElementById('slide-counter');
+            const progressBar = document.getElementById('progress-bar');
+            
+            let currentSlide = 0;
+            const totalSlides = slides.length;
+
+            function updateDeck() {
+                slides.forEach((slide, idx) => {
+                    if (idx === currentSlide) {
+                        slide.classList.add('active');
+                    } else {
+                        slide.classList.remove('active');
+                    }
+                });
+
+                // Update Counter & Progress
+                const slideNumStr = String(currentSlide + 1).padStart(2, '0');
+                const totalNumStr = String(totalSlides).padStart(2, '0');
+                slideCounter.textContent = `${slideNumStr} / ${totalNumStr}`;
+                
+                const progressPct = ((currentSlide + 1) / totalSlides) * 100;
+                progressBar.style.width = `${progressPct}%`;
+            }
+
+            function nextSlide() {
+                if (currentSlide < totalSlides - 1) {
+                    currentSlide++;
+                    updateDeck();
+                }
+            }
+
+            function prevSlide() {
+                if (currentSlide > 0) {
+                    currentSlide--;
+                    updateDeck();
+                }
+            }
+
+            // Button Click Listeners
+            nextBtn.addEventListener('click', nextSlide);
+            prevBtn.addEventListener('click', prevSlide);
+
+            // Keyboard Shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowRight' || e.key === ' ') {
+                    e.preventDefault();
+                    nextSlide();
+                } else if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    prevSlide();
+                }
+            });
+
+            // Initial State
+            updateDeck();
+
+            // Render Chart.js Visual Representations
+            // 1. Earthquake Chart
+            const ctxEq = document.getElementById('earthquakeChart').getContext('2d');
+            new Chart(ctxEq, {
+                type: 'bar',
+                data: {
+                    labels: ['Personal Care', 'Grocery I', 'Home Care', 'Beverages', 'Cleaning'],
+                    datasets: [{
+                        label: 'Sales Increase (%) Post-Earthquake',
+                        data: [41.7, 39.6, 31.6, 26.7, 11.9],
+                        backgroundColor: '#c45d3e',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { ticks: { color: '#635e58' }, grid: { color: '#eee8df' } },
+                        x: { ticks: { color: '#635e58' }, grid: { display: false } }
+                    }
+                }
+            });
+
+            // 2. Store Opening Chart
+            const ctxOpen = document.getElementById('storeOpeningChart').getContext('2d');
+            new Chart(ctxOpen, {
+                type: 'bar',
+                data: {
+                    labels: ['Store 52', 'Store 22', 'Store 42', 'Store 21', 'Store 29'],
+                    datasets: [{
+                        label: 'Pre-Opening Zero Days',
+                        data: [1570, 1011, 962, 934, 808],
+                        backgroundColor: '#dd7758',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { ticks: { color: '#635e58' }, grid: { color: '#eee8df' } },
+                        y: { ticks: { color: '#635e58' }, grid: { display: false } }
+                    }
+                }
+            });
+
+            // 3. Promotion Density Chart
+            const ctxPromo = document.getElementById('promoChart').getContext('2d');
+            new Chart(ctxPromo, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Train Promo (20.4%)', 'Train Regular (79.6%)', 'Test Promo (44.1%)', 'Test Regular (55.9%)'],
+                    datasets: [{
+                        data: [20.4, 79.6, 44.1, 55.9],
+                        backgroundColor: ['#c45d3e', '#e2d9cd', '#dd7758', '#2d2a26']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, color: '#635e58' } } }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
