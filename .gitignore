@@ -2,10 +2,25 @@
 data/train.csv
 data/*.csv
 
-# Node & Python dependencies
+# Large evaluation dumps
+artifacts/evaluation/oof_predictions.csv
+artifacts/evaluation/oof_predictions.parquet
+
+# SQLite databases & temp files
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Node & Python dependencies and caches
 node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
 __pycache__/
 *.pyc
+.pytest_cache/
 .env
 .env.local
 *.log
@@ -13,3 +28,5 @@ __pycache__/
 # IDE & OS temporary files
 .DS_Store
 Thumbs.db
+.vscode/
+
