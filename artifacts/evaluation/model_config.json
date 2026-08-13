@@ -1,0 +1,28 @@
+{
+  "primary_model": "Global_LightGBM_Direct_Panel",
+  "n_estimators": 100,
+  "learning_rate": 0.04,
+  "target_transform": "log1p(sales)",
+  "features": [
+    "store_nbr",
+    "family",
+    "onpromotion",
+    "dayofweek",
+    "is_payday",
+    "is_day_after_payday",
+    "delta_oil",
+    "lag_14",
+    "lag_28",
+    "rolling_mean_14d",
+    "rolling_mean_30d",
+    "is_christmas_dec25",
+    "is_new_year_jan1"
+  ],
+  "leakage_protection": "strict_as_of_cutoff_lag_14_and_calendar_only",
+  "permanent_zero_series_count": 53,
+  "origins_count": 8,
+  "pooled_overall_rmsle": 0.42393,
+  "pooled_overall_wape": 0.19245,
+  "pooled_overall_mae": 92.047,
+  "release_status": "LAUNCH_CANDIDATE_APPROVED"
+}

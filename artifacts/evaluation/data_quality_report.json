@@ -1,0 +1,8 @@
+{
+  "dataset_rows": 3000888,
+  "total_series": 1782,
+  "permanent_zero_series": 53,
+  "missing_dates_interpolated": true,
+  "oil_differencing_applied": true,
+  "no_same_day_target_leakage": true
+}
