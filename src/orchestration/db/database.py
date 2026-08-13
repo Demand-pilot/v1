@@ -10,7 +10,7 @@ import json
 import sqlite3
 import logging
 from typing import Dict, Any, List, Optional
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 
 logger = logging.getLogger("demandpilot.database")
 
@@ -72,8 +72,15 @@ class DatabaseRepository:
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def get_forecast_facts(self, store_nbr: int, family: str) -> Dict[str, Any]:
-        """Returns authoritative forecast facts for a store and family."""
+    def get_forecast_facts(self, store_nbr: int, family: str) -> Optional[Dict[str, Any]]:
+        """
+        Returns persisted forecast facts for a series, or None if none exist.
+
+        The previous "deterministic default fallback" synthesised a whole record —
+        engine, RMSLE 0.3812/0.2150, a +145% surge, promo densities, and a
+        `100.0 + (i % 7) * 4.0` daily curve — for any series the database had never seen.
+        Being deterministic did not make it true.
+        """
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -89,234 +96,222 @@ class DatabaseRepository:
                 d = dict(row)
                 d["daily_forecasts"] = json.loads(d["daily_forecasts_json"]) if isinstance(d["daily_forecasts_json"], str) else d["daily_forecasts_json"]
                 return d
-            
-            # Deterministic default fallback
-            daily = [100.0 + (i % 7) * 4.0 for i in range(16)]
-            return {
-                "run_id": "run_20170815_prod_001",
-                "store_nbr": store_nbr,
-                "family": family,
-                "selected_engine": "LightGBM_GBDT" if "SCHOOL" in family else "PyTorch_LSTM",
-                "backtest_rmsle": 0.3812 if "SCHOOL" in family else 0.2150,
-                "forecast_16d_sum": sum(daily),
-                "forecast_avg_daily": sum(daily) / 16.0,
-                "reorder_point": 1505.0,
-                "safety_stock": 420.0,
-                "surge_percentage": 145.0 if "SCHOOL" in family and store_nbr in [14, 1, 44] else 8.0,
-                "promo_density_train": 0.2037,
-                "promo_density_test": 0.4408,
-                "daily_forecasts": daily
-            }
 
-    def get_promo_elasticity(self, family: str) -> Dict[str, Any]:
-        """Returns promo elasticity data for a product family."""
+            logger.info(
+                "No forecast_facts row for store=%s family=%r; returning None.",
+                store_nbr, family
+            )
+            return None
+
+    def get_promo_elasticity(self, family: str) -> Optional[Dict[str, Any]]:
+        """
+        Returns the measured promo elasticity record for a family, or None.
+
+        The previous fallback returned `0.7421` for anything matching "SCHOOL" and
+        `0.2500` otherwise — invented elasticities that the mediator then routed on.
+        """
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM promo_elasticity WHERE family = ?", (family,))
             row = cursor.fetchone()
             if row:
                 return dict(row)
-            return {
-                "family": family,
-                "elasticity_score": 0.7421 if "SCHOOL" in family else 0.2500,
-                "category_classification": "PROMO_ELASTIC_SURGE" if "SCHOOL" in family else "SMOOTH_STAPLE",
-                "surge_risk_tier": "HIGH" if "SCHOOL" in family else "LOW"
-            }
+            return None
 
 
     # =========================================================================
-    # 2. STORE OPERATIONS SNAPSHOT (Zero Simulation / True Query Assembly)
+    # 2. STORE OPERATIONS SNAPSHOT
     # =========================================================================
 
-    def get_store_operations_snapshot(self, store_nbr: int = 14) -> Dict[str, Any]:
+    def get_store_operations_snapshot(self, store_nbr: int) -> Optional[Dict[str, Any]]:
         """
-        Constructs an authentic store operations snapshot from persisted SQL records.
-        Combines:
-        1. Store metadata
-        2. Persisted forecast facts (16-day daily values, winning engine, backtest RMSLE)
-        3. Persisted/demo inventory snapshots (on-hand, safety buffer, reorder point)
-        4. Actual sales history
-        5. Active order plan draft state
+        Assembles a store operations snapshot strictly from persisted rows.
+
+        Returns None when the store is unknown.
+
+        Every field is either read from the database or reported as None/[] alongside an
+        availability flag. Nothing is reconstructed, inferred, or defaulted.
+
+        What the previous implementation invented, and where each value comes from now:
+
+          * store city/state/region  -> was a `store_nbr in [14, 1, 44]` ternary chain
+                                        when store_metadata had no row.
+                                        Now: None is returned for an unknown store.
+          * category list            -> was a hardcoded 5-family list keyed on is_sierra.
+                                        Now: whatever families forecast_facts holds.
+          * backtest_rmsle / engine  -> was 0.3812 / 0.2150 by substring match on
+                                        "SCHOOL" when the fact row was missing.
+                                        Now: only from the fact row; no row, no category.
+          * surge_percentage         -> was 145.0 / 8.0 by the same substring match.
+                                        Now: only from the fact row.
+          * on_hand                  -> was 480.0 / 1240.0 / forecast_avg * 8.
+                                        Now: inventory_positions, else None.
+          * actual_history_28d/56d   -> was synthesised from the forecast's own average
+                                        velocity, i.e. the forecast relabelled as
+                                        observed truth.
+                                        Now: sales_history, else [].
+          * p10 / p90 bands          -> was yhat * 0.85 and yhat * 1.15, a fixed +/-15%
+                                        presented as a prediction interval.
+                                        Now: omitted until the model emits quantiles.
+          * confidence "94.2%"       -> was a string literal. Now: omitted.
+          * as_of / run_id           -> were the literals "2017-08-15T08:00:00Z" and
+                                        "run_20170815_prod_001".
+                                        Now: from forecast_runs.
         """
         store = self.get_store(store_nbr)
         if not store:
-            store = {
-                "store_nbr": store_nbr,
-                "city": "Quito" if store_nbr in [14, 1, 44] else ("Guayaquil" if store_nbr == 25 else "Manta"),
-                "state": "Pichincha" if store_nbr in [14, 1, 44] else ("Guayas" if store_nbr == 25 else "Manabi"),
-                "region": "Sierra" if store_nbr in [14, 1, 44] else "Coast",
-                "store_type": "A",
-                "cluster": 1,
-                "lead_time_days": 7 if store_nbr in [14, 1, 44] else 10
-            }
+            logger.info("No store_metadata row for store_nbr=%s; returning None.", store_nbr)
+            return None
 
         city = store["city"]
         state = store["state"]
         region = store["region"]
-        lead_time_days = store.get("lead_time_days", 7)
-        is_sierra = region == "Sierra"
+        lead_time_days = store.get("lead_time_days")
 
-        # Fetch persisted forecast facts for this store
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT 
-                    family, selected_engine, backtest_rmsle, forecast_16d_sum, forecast_avg_daily,
-                    reorder_point, safety_stock, surge_percentage, promo_density_train, promo_density_test,
-                    projected_revenue_usd, projected_profit_usd, daily_forecasts_json
+                SELECT
+                    run_id, family, selected_engine, backtest_rmsle, forecast_16d_sum,
+                    forecast_avg_daily, reorder_point, safety_stock, surge_percentage,
+                    daily_forecasts_json
                 FROM forecast_facts
                 WHERE store_nbr = ?
                 ORDER BY forecast_16d_sum DESC
             """, (store_nbr,))
-            fact_rows = cursor.fetchall()
+            fact_rows = [dict(r) for r in cursor.fetchall()]
 
-        # If facts are present, build categories from database rows
-        categories = []
-        priority_actions = []
+            inventory = self._load_inventory_positions(cursor, store_nbr)
+            run_id = fact_rows[0]["run_id"] if fact_rows else None
+            as_of, forecast_horizon = self._load_run_asof(cursor, run_id)
 
-        # Target 5 representative primary categories for the store console
-        target_families = [
-            "SCHOOL AND OFFICE SUPPLIES" if is_sierra else "BEVERAGES",
-            "BEVERAGES",
-            "GROCERY I",
-            "CLEANING",
-            "PERSONAL CARE"
-        ]
-        # Remove duplicates while preserving order
-        target_families = list(dict.fromkeys(target_families))
+            categories = []
+            priority_actions = []
 
-        cutoff_date = date(2017, 8, 15)
+            for row in fact_rows:
+                fam = row["family"]
+                daily_fc = row["daily_forecasts_json"]
+                if isinstance(daily_fc, str):
+                    daily_fc = json.loads(daily_fc)
 
-        for fam in target_families:
-            # Find matching fact row
-            row = next((dict(r) for r in fact_rows if r["family"] == fam), None)
-            
-            if row:
-                daily_fc = json.loads(row["daily_forecasts_json"]) if isinstance(row["daily_forecasts_json"], str) else row["daily_forecasts_json"]
-                engine = row["selected_engine"]
-                rmsle = float(row["backtest_rmsle"])
                 fc_avg = float(row["forecast_avg_daily"])
-                fc_sum = float(row["forecast_16d_sum"])
-                ss = float(row["safety_stock"])
-                rop = float(row["reorder_point"])
-                surge_pct = float(row["surge_percentage"])
-            else:
-                # Deterministic baseline values if table row missing
-                daily_fc = [120.0 + (i % 7) * 5.0 for i in range(16)]
-                engine = "LightGBM_GBDT" if "SCHOOL" in fam else "PyTorch_LSTM"
-                rmsle = 0.3812 if "SCHOOL" in fam else 0.2150
-                fc_avg = sum(daily_fc) / 16.0
-                fc_sum = sum(daily_fc)
-                ss = 320.0
-                rop = (fc_avg * lead_time_days) + ss
-                surge_pct = 145.0 if ("SCHOOL" in fam and is_sierra) else 8.0
+                inv = inventory.get(fam)
+                on_hand = float(inv["on_hand_units"]) if inv else None
 
-            # Compute Confidence intervals (p10 / p90)
-            fc_p10 = [round(v * 0.85, 1) for v in daily_fc]
-            fc_p90 = [round(v * 1.15, 1) for v in daily_fc]
+                # Days of cover needs a real stock position and a non-zero velocity.
+                # Otherwise it is unknown, which is not the same as zero.
+                if on_hand is not None and fc_avg > 0.0:
+                    days_of_cover = round(on_hand / fc_avg, 1)
+                else:
+                    days_of_cover = None
 
-            # Reconstruct 28D and 56D actual sales history from daily velocity
-            hist_56d = [round(max(0.0, fc_avg * (0.8 + 0.35 * ((i % 7) / 7.0)) + (25.0 if i > 40 and "SCHOOL" in fam and is_sierra else 0.0)), 1) for i in range(56)]
-            hist_28d = hist_56d[28:]
+                history_28d = self._load_sales_history(cursor, store_nbr, fam, 28)
+                history_56d = self._load_sales_history(cursor, store_nbr, fam, 56)
 
-            # On-hand inventory: prioritize realistic depletion
-            if "SCHOOL" in fam and is_sierra:
-                on_hand = 480.0
-                stockout_days = round(on_hand / (fc_avg + 1e-6), 1) # ~3.1 days
-                stockout_risk = "HIGH"
-                rec_order_qty = 1120
-                stockout_date_str = (cutoff_date + timedelta(days=int(stockout_days) + 1)).isoformat()
-            elif "BEVERAGES" in fam:
-                on_hand = 1240.0
-                stockout_days = round(on_hand / (fc_avg + 1e-6), 1) # ~5.5 days
-                stockout_risk = "MEDIUM"
-                rec_order_qty = 1600
-                stockout_date_str = (cutoff_date + timedelta(days=int(stockout_days) + 1)).isoformat()
-            else:
-                on_hand = round(fc_avg * 8.0, 0)
-                stockout_days = round(on_hand / (fc_avg + 1e-6), 1)
-                stockout_risk = "LOW"
-                rec_order_qty = int(fc_avg * lead_time_days)
-                stockout_date_str = (cutoff_date + timedelta(days=int(stockout_days) + 1)).isoformat()
-
-            # Event annotations
-            event_annotations = []
-            if "BEVERAGES" in fam or "GROCERY" in fam:
-                event_annotations.append({"date": "2017-08-16", "label": "Bi-Weekly Payday (+8.0%)", "type": "PAYDAY"})
-                event_annotations.append({"date": "2017-08-31", "label": "End-of-Month Payday", "type": "PAYDAY"})
-            if "SCHOOL" in fam and is_sierra:
-                event_annotations.append({"date": "2017-08-25", "label": "Sierra School Season Promo", "type": "PROMOTION"})
-
-            cat_item = {
-                "family": fam,
-                "on_hand": int(on_hand),
-                "safety_stock": int(ss),
-                "reorder_point": int(rop),
-                "daily_velocity": round(fc_avg, 1),
-                "days_of_cover": stockout_days,
-                "stockout_risk": stockout_risk,
-                "recommended_order_qty": rec_order_qty,
-                "projected_stockout_date": stockout_date_str,
-                "actual_history_28d": hist_28d,
-                "actual_history_56d": hist_56d,
-                "forecast_16d": daily_fc,
-                "forecast_lower_p10": fc_p10,
-                "forecast_upper_p90": fc_p90,
-                "event_annotations": event_annotations,
-                "audit_details": {
-                    "selected_engine": engine,
-                    "backtest_rmsle": rmsle,
-                    "decision_rationale": (
-                        f"Direct {engine} captured {surge_pct:.1f}% promo/payday interaction spike with {rmsle:.4f} RMSLE."
-                        if surge_pct > 10.0 else
-                        f"Smooth autoregression selected with {rmsle:.4f} RMSLE on weekly replenishment cycles."
-                    )
-                }
-            }
-            categories.append(cat_item)
-
-            # Build Priority Action if stockout risk is elevated
-            if stockout_risk in ["HIGH", "MEDIUM"]:
-                priority_actions.append({
-                    "id": f"act_{fam.lower().replace(' ', '_')}",
-                    "urgency": stockout_risk,
+                categories.append({
                     "family": fam,
-                    "action_headline": f"Order {rec_order_qty:,} units of {fam.title()} by 14:00",
-                    "recommended_order_qty": rec_order_qty,
-                    "projected_stockout_date": stockout_date_str,
-                    "days_of_cover": stockout_days,
-                    "reason": (
-                        f"Sierra academic year begins late August (+145% surge). Current stock ({int(on_hand)} units) depletes in {stockout_days} days."
-                        if "SCHOOL" in fam else
-                        f"Aug 16 payday peak creates an average +8.0% shopping surge. Current stock breaches safety threshold in {stockout_days} days."
-                    ),
-                    "confidence": "94.2%" if "SCHOOL" in fam else "91.8%",
-                    "impact": (
-                        f"Prevents stockout of ~{int(rec_order_qty * 0.75)} units during peak foot traffic."
-                    ),
-                    "is_added_to_plan": False
+                    "on_hand": on_hand,
+                    "on_hand_available": on_hand is not None,
+                    "on_hand_observed_at": inv["observed_at"] if inv else None,
+                    "safety_stock": float(row["safety_stock"]),
+                    "reorder_point": float(row["reorder_point"]),
+                    "daily_velocity": round(fc_avg, 4),
+                    "days_of_cover": days_of_cover,
+                    "actual_history_28d": history_28d,
+                    "actual_history_56d": history_56d,
+                    "history_available": bool(history_56d),
+                    "forecast": daily_fc,
+                    "audit_details": {
+                        "run_id": row["run_id"],
+                        "selected_engine": row["selected_engine"],
+                        "backtest_rmsle": float(row["backtest_rmsle"]),
+                        "surge_percentage": row["surge_percentage"],
+                    },
                 })
 
+                # A replenishment action requires a real stock position. Without one there
+                # is no basis on which to tell an operator to order anything.
+                if on_hand is not None and on_hand < float(row["reorder_point"]):
+                    priority_actions.append({
+                        "id": "act_" + fam.lower().replace(" ", "_"),
+                        "family": fam,
+                        "reason": "on_hand_below_reorder_point",
+                        "on_hand": on_hand,
+                        "reorder_point": float(row["reorder_point"]),
+                        "days_of_cover": days_of_cover,
+                        "is_added_to_plan": False,
+                    })
+
+        any_inventory = any(c["on_hand_available"] for c in categories)
         return {
             "store_id": store_nbr,
-            "store_name": f"Store {store_nbr} — {city} ({region} Region)",
+            "store_name": "Store %s - %s (%s)" % (store_nbr, city, region),
             "city": city,
             "state": state,
             "region": region,
             "lead_time_days": lead_time_days,
-            "as_of": "2017-08-15T08:00:00Z",
-            "forecast_run_id": "run_20170815_prod_001",
-            "data_status": "LIVE",
-            "last_refreshed": datetime.utcnow().isoformat() + "Z",
+            "as_of": as_of,
+            "forecast_run_id": run_id,
+            "forecast_horizon_days": forecast_horizon,
+            "data_status": "LIVE" if fact_rows else "NO_FORECAST_AVAILABLE",
+            "last_refreshed": datetime.now(timezone.utc).isoformat(),
             "summary_metrics": {
-                "total_on_hand_units": sum(c["on_hand"] for c in categories),
-                "critical_stockout_categories": sum(1 for c in categories if c["stockout_risk"] == "HIGH"),
-                "total_recommended_order_units": sum(c["recommended_order_qty"] for c in categories),
-                "projected_16d_demand_units": int(sum(sum(c["forecast_16d"]) for c in categories))
+                "categories_with_forecast": len(categories),
+                "categories_with_inventory": sum(1 for c in categories if c["on_hand_available"]),
+                "total_on_hand_units": (
+                    sum(c["on_hand"] for c in categories if c["on_hand_available"])
+                    if any_inventory else None
+                ),
+                "projected_demand_units": (
+                    round(sum(sum(c["forecast"]) for c in categories), 2) if categories else None
+                ),
             },
             "priority_actions": priority_actions,
-            "categories": categories
+            "categories": categories,
         }
+
+    @staticmethod
+    def _load_inventory_positions(cursor, store_nbr: int) -> Dict[str, Dict[str, Any]]:
+        """Returns {family: position} from inventory_positions; {} when none recorded."""
+        try:
+            cursor.execute(
+                "SELECT family, on_hand_units, observed_at FROM inventory_positions WHERE store_nbr = ?",
+                (store_nbr,)
+            )
+            return {r["family"]: dict(r) for r in cursor.fetchall()}
+        except sqlite3.Error as err:
+            logger.warning("inventory_positions unavailable: %s", err)
+            return {}
+
+    @staticmethod
+    def _load_sales_history(cursor, store_nbr: int, family: str, n_days: int) -> List[float]:
+        """Returns the most recent n_days of observed units, oldest first; [] when none."""
+        try:
+            cursor.execute("""
+                SELECT units FROM sales_history
+                WHERE store_nbr = ? AND family = ?
+                ORDER BY date DESC LIMIT ?
+            """, (store_nbr, family, n_days))
+            return [float(r["units"]) for r in reversed(cursor.fetchall())]
+        except sqlite3.Error as err:
+            logger.warning("sales_history unavailable: %s", err)
+            return []
+
+    @staticmethod
+    def _load_run_asof(cursor, run_id: Optional[str]):
+        """Returns (cutoff_date, horizon_days) from forecast_runs; (None, None) if absent."""
+        if not run_id:
+            return None, None
+        cursor.execute(
+            "SELECT cutoff_date, horizon_days FROM forecast_runs WHERE run_id = ?",
+            (run_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None, None
+        run = dict(row)
+        cutoff = run.get("cutoff_date")
+        return (str(cutoff) if cutoff else None), run.get("horizon_days")
 
     # =========================================================================
     # 3. ORDER PLANNING & PURCHASE ORDER LIFECYCLE
@@ -492,14 +487,63 @@ class DatabaseRepository:
                 d["daily_forecasts"] = json.loads(d["daily_forecasts_json"]) if isinstance(d["daily_forecasts_json"], str) else d["daily_forecasts_json"]
                 items.append(d)
 
+            if not items:
+                return {
+                    "status": "no_forecast_available",
+                    "horizon_days": 0,
+                    "start_date": None,
+                    "end_date": None,
+                    "total_series": 0,
+                    "data": []
+                }
+
+            # Derive the forecast window from the run that produced these rows, rather
+            # than the hardcoded "2017-08-16" / "2017-08-31" literals this used to return.
+            # Those literals are Favorita's last-observed-date + 1 and made the response
+            # wrong for any other dataset, cutoff, or horizon.
+            start_date, end_date, horizon_days = self._resolve_forecast_window(
+                cursor, items[0].get("run_id"), len(items[0]["daily_forecasts"])
+            )
+
             return {
                 "status": "success",
-                "horizon_days": 16,
-                "start_date": "2017-08-16",
-                "end_date": "2017-08-31",
+                "horizon_days": horizon_days,
+                "start_date": start_date,
+                "end_date": end_date,
                 "total_series": len(items),
                 "data": items
             }
+
+    @staticmethod
+    def _resolve_forecast_window(cursor, run_id: Optional[str], n_days: int):
+        """
+        Resolves (start_date, end_date, horizon_days) for a run from forecast_runs.
+
+        The forecast window is [cutoff + 1 day, cutoff + horizon days]. Returns
+        (None, None, n_days) when the run row is missing — an unknown window is reported
+        as unknown, not guessed.
+        """
+        if not run_id:
+            return None, None, n_days
+
+        cursor.execute(
+            "SELECT cutoff_date, horizon_days FROM forecast_runs WHERE run_id = ?",
+            (run_id,)
+        )
+        run_row = cursor.fetchone()
+        if not run_row:
+            return None, None, n_days
+
+        run = dict(run_row)
+        horizon_days = int(run.get("horizon_days") or n_days)
+        cutoff_raw = run.get("cutoff_date")
+        if not cutoff_raw:
+            return None, None, horizon_days
+
+        cutoff = datetime.strptime(str(cutoff_raw)[:10], "%Y-%m-%d")
+        start = cutoff + timedelta(days=1)
+        end = cutoff + timedelta(days=horizon_days)
+        return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"), horizon_days
 
     def get_store_financial_returns(self) -> List[Dict[str, Any]]:
         """Retrieves all 54 store financial return records from SQL database."""
@@ -521,21 +565,28 @@ class DatabaseRepository:
         """Aggregates national financial returns and store profit margins."""
         stores = self.get_store_financial_returns()
         if not stores:
+            # No financial return rows => report zero/None, not invented totals. This
+            # branch previously returned a fabricated national picture (2,674,850 units,
+            # $16,526,470 revenue, $4,703,580 profit, 28.46% margin, 54 stores) that the
+            # executive dashboard rendered as measured company performance.
+            logger.info("No store_financial_returns rows; reporting empty macro analytics.")
             return {
-                "national_volume": 2674850.0,
-                "gross_revenue_usd": 16526470.0,
-                "return_profit_usd": 4703580.0,
-                "avg_net_margin_pct": 0.2846,
-                "holding_cost_savings_usd": 694110.0,
-                "stores_count": 54,
-                "stores": []
+                "national_volume": 0.0,
+                "gross_revenue_usd": 0.0,
+                "return_profit_usd": 0.0,
+                "avg_net_margin_pct": None,
+                "holding_cost_savings_usd": 0.0,
+                "stores_count": 0,
+                "stores": [],
+                "regional_summary": {},
+                "data_status": "NO_DATA"
             }
 
         total_volume = sum(s["forecast_16d_volume"] for s in stores)
         total_revenue = sum(s["gross_revenue_usd"] for s in stores)
         total_profit = sum(s["return_profit_usd"] for s in stores)
         total_savings = sum(s["holding_cost_savings_usd"] for s in stores)
-        avg_margin = (total_profit / total_revenue) if total_revenue > 0 else 0.2846
+        avg_margin = (total_profit / total_revenue) if total_revenue > 0 else None
 
         sierra_stores = [s for s in stores if s["region"] == "Sierra"]
         coast_stores = [s for s in stores if s["region"] == "Coast"]
@@ -546,7 +597,7 @@ class DatabaseRepository:
             "gross_revenue_usd": round(total_revenue, 2),
             "return_profit_usd": round(total_profit, 2),
             "holding_cost_savings_usd": round(total_savings, 2),
-            "avg_net_margin_pct": round(avg_margin, 4),
+            "avg_net_margin_pct": round(avg_margin, 4) if avg_margin is not None else None,
             "stores_count": len(stores),
             "stores": stores,
             "regional_summary": {
@@ -554,19 +605,16 @@ class DatabaseRepository:
                     "count": len(sierra_stores),
                     "revenue_usd": round(sum(s["gross_revenue_usd"] for s in sierra_stores), 2),
                     "profit_usd": round(sum(s["return_profit_usd"] for s in sierra_stores), 2),
-                    "surge_driver": "Sierra Academic Spike (+145%)"
                 },
                 "coast": {
                     "count": len(coast_stores),
                     "revenue_usd": round(sum(s["gross_revenue_usd"] for s in coast_stores), 2),
                     "profit_usd": round(sum(s["return_profit_usd"] for s in coast_stores), 2),
-                    "surge_driver": "Coastal Port & Payday Surge (+8.0%)"
                 },
                 "oriente": {
                     "count": len(oriente_stores),
                     "revenue_usd": round(sum(s["gross_revenue_usd"] for s in oriente_stores), 2),
                     "profit_usd": round(sum(s["return_profit_usd"] for s in oriente_stores), 2),
-                    "surge_driver": "Remote Hub Transit Stability"
                 }
             }
         }
@@ -577,13 +625,20 @@ class DatabaseRepository:
 
     def hybrid_search_knowledge(self, query_text: str, store_nbr: Optional[int] = None, family: Optional[str] = None, top_k: int = 3) -> List[Dict[str, Any]]:
         """
-        Executes Reciprocal Rank Fusion (RRF) over persisted operational documents.
-        Formula: RRF(d) = Σ 1 / (60 + rank_source(d))
+        Ranks persisted operational documents by lexical term overlap.
+
+        `similarity_score` is the fraction of query terms found in the document — a real,
+        computable retrieval quality measure. It was previously
+        `min(0.98, 0.70 + score * 0.08)`, which floored every returned document at 0.70
+        and put any document matching a single term above the 0.75 confidence gate.
+        Documents with zero term overlap were also returned, still scored 0.70.
+
+        Documents with no overlap are now excluded, and the score is not inflated.
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT doc_id, store_nbr, family, doc_type, title, content
+                SELECT doc_id, store_nbr, family, doc_type, title, content, source
                 FROM store_knowledge_docs
                 WHERE approved_status = 1
             """)
@@ -592,36 +647,42 @@ class DatabaseRepository:
         if not docs:
             return []
 
-        # Lexical keyword match rank
-        q_lower = query_text.lower()
+        query_terms = [t for t in query_text.lower().split() if len(t) > 2]
+        if not query_terms:
+            return []
+
         scored_docs = []
         for d in docs:
-            score = 0.0
-            content_lower = (d["title"] + " " + d["content"]).lower()
-            for term in q_lower.split():
-                if term in content_lower:
-                    score += 1.0
-            
-            # Store/family preference bonus
-            if store_nbr and d["store_nbr"] in [store_nbr, 0]:
-                score += 1.5
-            if family and d["family"] in [family, "ALL"]:
-                score += 1.5
+            haystack = (d["title"] + " " + d["content"]).lower()
+            matched = sum(1 for term in query_terms if term in haystack)
+            if matched == 0:
+                continue
 
-            scored_docs.append((score, d))
+            match_ratio = matched / len(query_terms)
+
+            # Scope relevance is a tiebreak for ranking, not evidence of textual match,
+            # so it affects sort order but never the reported similarity.
+            rank_score = float(matched)
+            if store_nbr and d["store_nbr"] in (store_nbr, 0):
+                rank_score += 1.5
+            if family and d["family"] in (family, "ALL"):
+                rank_score += 1.5
+
+            scored_docs.append((rank_score, match_ratio, d))
 
         scored_docs.sort(key=lambda x: x[0], reverse=True)
-        
+
         results = []
-        for rank, (score, doc) in enumerate(scored_docs[:top_k]):
-            rrf_score = round(1.0 / (60.0 + rank + 1), 5)
+        for rank, (_, match_ratio, doc) in enumerate(scored_docs[:top_k]):
             results.append({
                 "doc_id": doc["doc_id"],
+                "store_nbr": doc["store_nbr"],
                 "title": doc["title"],
                 "content": doc["content"],
                 "doc_type": doc["doc_type"],
-                "rrf_score": rrf_score,
-                "similarity_score": round(min(0.98, 0.70 + score * 0.08), 2)
+                "source": doc.get("source", "UNKNOWN"),
+                "rrf_score": round(1.0 / (60.0 + rank + 1), 5),
+                "similarity_score": round(match_ratio, 4),
             })
 
         return results

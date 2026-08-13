@@ -1,8 +1,16 @@
 """
 DemandPilot Layer 2 Orchestration & AI Agent API Gateway.
-FastAPI service backed by Supabase PostgreSQL, Auth & pgvector.
-Enforces strict store-level RBAC, immutable forecast facts, order planning,
-and persistent Purchase Order lifecycle.
+
+Storage backend: SQLite, via `src.orchestration.db.DatabaseRepository`.
+
+The previous docstrings across this module claimed "Supabase PostgreSQL, Auth & pgvector"
+while every query used SQLite `?` placeholders through `sqlite3`. The claim was corrected
+to match the code rather than the reverse: `supabase/migrations/` exists for a future
+Postgres deployment, but nothing in the running service talks to Postgres today. When
+that changes, the placeholders become `%s` and this docstring changes with them.
+
+Enforces store-level RBAC, forecast facts, order planning, and the Purchase Order
+lifecycle.
 """
 
 from dotenv import load_dotenv
@@ -10,6 +18,7 @@ load_dotenv()
 
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Optional, List
 
@@ -49,7 +58,7 @@ db_repo = DatabaseRepository()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("DemandPilot Orchestration API Gateway starting up with Supabase PostgreSQL connection...")
+    logger.info("DemandPilot Orchestration API Gateway starting up (SQLite backend)...")
     yield
     logger.info("DemandPilot Orchestration API Gateway shutting down...")
 
@@ -61,11 +70,24 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Enable CORS for Next.js 14 / React Frontend Layer
+# CORS. `allow_origins=["*"]` together with `allow_credentials=True` is invalid per the
+# CORS spec: a wildcard Access-Control-Allow-Origin cannot be combined with credentialed
+# requests, so browsers reject the response and the credentialed calls silently fail.
+# Origins are read from CORS_ALLOWED_ORIGINS (comma-separated).
+_cors_origins = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
+if "*" in _cors_origins:
+    logger.warning(
+        "CORS_ALLOWED_ORIGINS contains '*'; disabling credentialed CORS to stay spec-compliant."
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials="*" not in _cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -130,10 +152,15 @@ async def get_store_operations_snapshot(
         )
 
     try:
-        return db_repo.get_store_operations_snapshot(store_nbr=store_id)
+        snapshot = db_repo.get_store_operations_snapshot(store_nbr=store_id)
     except Exception as e:
         logger.error(f"Error fetching store operations snapshot: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+    # An unknown store is a 404. It is not a store with invented metadata.
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail=f"No store metadata for store {store_id}.")
+    return snapshot
 
 
 # =============================================================================
@@ -198,7 +225,12 @@ async def get_purchase_orders(
     offset: int = Query(0, ge=0, description="Page offset"),
     user: AuthenticatedUser = Depends(get_current_user)
 ):
-    """Retrieves persisted purchase orders with bounded pagination."""
+    """
+    Retrieves persisted purchase orders with bounded pagination.
+
+    SQLite-backed; `?` placeholders are correct for this driver. The docstring previously
+    claimed Supabase PostgreSQL, which would require `%s`.
+    """
     with db_repo.get_connection() as conn:
         cursor = conn.cursor()
         if store_id:
@@ -256,7 +288,8 @@ async def get_macro_analytics(user: AuthenticatedUser = Depends(get_current_user
             holding_cost_savings_usd=data["holding_cost_savings_usd"],
             stores_count=data["stores_count"],
             stores=data["stores"],
-            regional_summary=data.get("regional_summary")
+            regional_summary=data.get("regional_summary"),
+            data_status=data.get("data_status")
         )
     except Exception as e:
         logger.error(f"Error fetching macro analytics: {e}")

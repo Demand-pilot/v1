@@ -8,26 +8,33 @@ from pydantic import BaseModel, Field
 
 
 class ForecastItem(BaseModel):
-    store_nbr: int = Field(..., description="Store identification number (1-54)", example=14)
+    store_nbr: int = Field(..., description="Store identification number", example=14)
     family: str = Field(..., description="Product family category", example="SCHOOL AND OFFICE SUPPLIES")
     selected_engine: str = Field(..., description="Selected model engine", example="LightGBM_GBDT")
-    backtest_rmsle: float = Field(..., description="16-day rolling backtest RMSLE score", example=0.3812)
+    # No `example=` on measured quantities. Schema examples are rendered in /docs and in
+    # generated clients, and the previous placeholders (0.3812, 2480.0) were the exact
+    # fabricated values the API also returned at runtime — indistinguishable from real output.
+    backtest_rmsle: float = Field(..., description="Backtest RMSLE for this series, from the persisted run")
     daily_forecasts: List[float] = Field(
         ...,
-        description="16-day daily projected unit sales (Aug 16 - Aug 31)",
-        min_items=16,
-        max_items=16
+        description="Daily projected unit sales, one entry per horizon day"
     )
-    reorder_point: float = Field(..., description="Calculated Reorder Point (ROP)", example=2480.0)
-    safety_stock: float = Field(..., description="Calculated Safety Stock (SS)", example=420.0)
+    reorder_point: float = Field(..., description="Calculated Reorder Point (ROP)")
+    safety_stock: float = Field(..., description="Calculated Safety Stock (SS)")
 
 
 class ForecastGridResponse(BaseModel):
-    status: str = Field("success", example="success")
-    horizon_days: int = Field(16, example=16)
-    start_date: str = Field("2017-08-16", example="2017-08-16")
-    end_date: str = Field("2017-08-31", example="2017-08-31")
-    data: List[ForecastItem]
+    """
+    A forecast grid, or an explicit empty state.
+
+    When `status == "no_forecast_available"`, `data` is empty and the date fields are
+    None. Consumers must render an empty state rather than filling in defaults.
+    """
+    status: str = Field("success", description='"success" or "no_forecast_available"')
+    horizon_days: int = Field(0, description="Number of forecast days; 0 when unavailable")
+    start_date: Optional[str] = Field(None, description="First forecast date, from the persisted run")
+    end_date: Optional[str] = Field(None, description="Last forecast date, from the persisted run")
+    data: List[ForecastItem] = Field(default_factory=list)
 
 
 class AgentChatRequest(BaseModel):
@@ -76,11 +83,15 @@ class MacroAnalyticsResponse(BaseModel):
     national_demand_volume: Optional[float] = None
     gross_revenue_usd: float
     return_profit_usd: float
-    avg_net_margin_pct: float
+    # Optional because an average margin over zero stores is undefined, not 0.0 and not
+    # 0.2846. The schema previously required a float here, which is why the repository
+    # had to invent one.
+    avg_net_margin_pct: Optional[float] = None
     holding_cost_savings_usd: float
     stores_count: int
     stores: List[StoreMacroKPI]
     regional_summary: Optional[Dict[str, RegionalSummary]] = None
+    data_status: Optional[str] = Field(None, description='"NO_DATA" when nothing is persisted')
 
 
 # Order Plan & Purchase Order Schemas

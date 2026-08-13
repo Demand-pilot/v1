@@ -21,7 +21,7 @@ from src.orchestration.agent.rag_retriever import HybridRRFRetriever
 from src.orchestration.agent.memory import ConversationMemoryManager
 from src.orchestration.router.intent_router import IntentRouter
 from src.orchestration.cache.redis_client import RedisForecastCache
-from src.features.transformer import FeatureTransformer
+from src.features.transformer import CoreFeatureBuilder
 
 client = TestClient(app)
 db_repo = DatabaseRepository()
@@ -32,38 +32,73 @@ db_repo = DatabaseRepository()
 # -----------------------------------------------------------------------------
 
 def test_feature_grouped_isolation_no_cross_series_leakage():
-    """Verify that lag features do not leak sales across different store/family series."""
+    """Lag features must never cross a series boundary."""
     df_sample = pd.DataFrame({
+        "entity_id": ["1", "1", "2", "2"],
+        "item_id": ["GROCERY I"] * 4,
         "date": pd.to_datetime(["2017-08-01", "2017-08-02", "2017-08-01", "2017-08-02"]),
-        "store_nbr": [1, 1, 2, 2],
-        "family": ["GROCERY I", "GROCERY I", "GROCERY I", "GROCERY I"],
-        "sales": [100.0, 200.0, 500.0, 600.0],
-        "onpromotion": [0, 1, 0, 1]
+        "target": [100.0, 200.0, 500.0, 600.0],
     })
 
-    df_res = FeatureTransformer.generate_lags_and_rolling(df_sample, target_col="sales")
+    lagged = CoreFeatureBuilder.lag_and_rolling(df_sample, min_lag_offset=1, lags=[1], windows=[])
 
-    # Store 2 on Day 1 must NOT receive Store 1 Day 2 sales as lag_1!
-    store2_day1 = df_res[(df_res["store_nbr"] == 2) & (df_res["date"] == "2017-08-01")].iloc[0]
-    assert store2_day1["lag_1"] == 0.0  # Must be 0.0 initial lag, NOT 200.0 from Store 1!
+    # Entity 2 on day 1 has no prior observation of its OWN series. That is NaN, not 0.0
+    # and emphatically not 200.0 carried over from entity 1. The previous implementation
+    # filled it with 0.0, which reads as an observed zero-demand day.
+    entity2_day1 = lagged.loc[
+        (df_sample["entity_id"] == "2") & (df_sample["date"] == "2017-08-01")
+    ].iloc[0]
+    assert pd.isna(entity2_day1["lag_1"])
+
+    # Entity 2 on day 2 sees its own day-1 value, not entity 1's.
+    entity2_day2 = lagged.loc[
+        (df_sample["entity_id"] == "2") & (df_sample["date"] == "2017-08-02")
+    ].iloc[0]
+    assert entity2_day2["lag_1"] == 500.0
 
 
-def test_as_of_cutoff_safe_oil_differencing():
-    """Verify oil price differencing handles missing values and computes shocks safely."""
-    oil_df = pd.DataFrame({
+def test_as_of_cutoff_safe_oil_differencing(tmp_path):
+    """
+    A config-declared global series is differenced and gap-filled on load.
+
+    Oil is no longer a concept the feature code knows about; it is a `global_series`
+    entry in configs/datasets/favorita.yaml, loaded generically.
+    """
+    from src.ingest.adapter import DatasetConfig, DatasetAdapter, ExogenousSpec
+
+    csv_path = tmp_path / "oil.csv"
+    pd.DataFrame({
         "date": ["2017-08-01", "2017-08-02", "2017-08-03"],
-        "dcoilwtico": [48.5, np.nan, 50.5]
-    })
-    transformed = FeatureTransformer.transform_oil_data(oil_df)
-    assert "delta_oil" in transformed.columns
-    assert transformed["delta_oil"].iloc[0] == 0.0
-    assert not transformed["oil_price"].isna().any()
+        "dcoilwtico": [48.5, np.nan, 50.5],
+    }).to_csv(csv_path, index=False)
+
+    config = DatasetConfig(
+        name="t", grain="daily", main_path="unused",
+        column_map={}, config_dir=str(tmp_path),
+    )
+    spec = ExogenousSpec(
+        kind="global_series", name="delta_oil", path=str(csv_path),
+        date_col="date", value_col="dcoilwtico", transform="first_difference",
+    )
+
+    series = DatasetAdapter.load_global_series(config, spec)
+
+    assert series.name == "delta_oil"
+    # The interior gap is interpolated (48.5 -> 49.5 -> 50.5), so each step is +1.0.
+    assert series.iloc[1] == pytest.approx(1.0)
+    assert series.iloc[2] == pytest.approx(1.0)
+    # The first difference is genuinely undefined, and is left as NaN rather than
+    # asserted to be 0.0 ("no change") as the previous implementation did.
+    assert pd.isna(series.iloc[0])
 
 
 # -----------------------------------------------------------------------------
-# 2. All 33 Product-Family Entity Extraction Tests
+# 2. Entity Extraction Tests
 # -----------------------------------------------------------------------------
 
+# Favorita's item vocabulary. Phase 5 replaces this hardcoded list in the router with the
+# vocabulary read from the DatasetProfile at runtime; the test list stays here as a
+# fixture for that dataset.
 ALL_33_FAMILIES = [
     "AUTOMOTIVE", "BABY CARE", "BEAUTY", "BEVERAGES", "BOOKS",
     "BREAD/BAKERY", "CELEBRATION", "CLEANING", "DAIRY", "DELI",
@@ -74,6 +109,7 @@ ALL_33_FAMILIES = [
     "PET SUPPLIES", "PLAYERS AND ELECTRONICS", "POULTRY", "PREPARED FOODS",
     "PRODUCE", "SCHOOL AND OFFICE SUPPLIES", "SEAFOOD"
 ]
+
 
 @pytest.mark.parametrize("family_name", ALL_33_FAMILIES)
 def test_all_33_product_family_entity_extraction(family_name):
@@ -91,20 +127,26 @@ def test_all_33_product_family_entity_extraction(family_name):
 # -----------------------------------------------------------------------------
 
 def test_hybrid_rrf_retrieval_ranking():
-    """Verify RRF formula fuses and ranks lexical + vector search results."""
-    retriever = HybridRRFRetriever(k_rrf=60)
-    results = retriever.retrieve(query="Sierra academic school season promotions", store_nbr=14)
+    """RRF fuses and ranks a supplied corpus; an empty corpus returns []."""
+    corpus = [
+        {"id": "d1", "store_nbr": 14, "text": "Sierra academic season restock planning."},
+        {"id": "d2", "store_nbr": 14, "text": "Payday staging for beverage aisles."},
+        {"id": "d3", "store_nbr": 25, "text": "Coastal port transit buffer levels."},
+    ]
+    retriever = HybridRRFRetriever(k_rrf=60, corpus=corpus)
+    results = retriever.retrieve(query="Sierra academic season promotions", store_nbr=14)
 
     assert len(results) > 0
     top_doc = results[0]
-    assert "rrf_score" in top_doc
     assert top_doc["rrf_score"] > 0.0
-    assert "Sierra" in top_doc["content"] or "school" in top_doc["content"].lower()
+    assert "Sierra" in top_doc["content"]
+    # Store 25's document must not surface for store 14. The previous filter
+    # (`doc.store_nbr == store_nbr or doc.store_nbr == 14`) leaked across stores.
+    assert all(d["id"] != "d3" for d in results)
 
+    # No corpus configured => nothing retrieved, rather than a hardcoded document set.
+    assert HybridRRFRetriever(k_rrf=60).retrieve(query="anything", store_nbr=14) == []
 
-# -----------------------------------------------------------------------------
-# 4. 3-Layer Stateful Memory & Tenant Isolation Tests
-# -----------------------------------------------------------------------------
 
 def test_memory_tenant_and_user_isolation():
     """Verify memory isolates state across users and enforces turn budget."""
@@ -132,15 +174,13 @@ def test_rbac_store_authorization_and_denial():
 # -----------------------------------------------------------------------------
 
 def test_sql_database_authoritative_facts():
-    """Verify DatabaseRepository returns authoritative forecast facts."""
+    """A series with no persisted forecast returns None, not a synthesised record."""
     facts = db_repo.get_forecast_facts(store_nbr=14, family="SCHOOL AND OFFICE SUPPLIES")
-    assert facts["selected_engine"] == "LightGBM_GBDT"
-    assert facts["surge_percentage"] == 145.0
-    assert facts["reorder_point"] > 0.0
+    assert facts is None
 
 
 def test_chat_endpoint_integration_with_sql_facts():
-    """Verify POST /api/v1/agent/chat retrieves authoritative SQL facts."""
+    """The chat endpoint declines to answer when it has no facts for the series."""
     payload = {
         "user_id": "mgr_store_14",
         "user_role": "STORE_MANAGER",
@@ -151,5 +191,5 @@ def test_chat_endpoint_integration_with_sql_facts():
     data = response.json()
 
     assert data["status"] == "success"
-    assert data["grounded_verified"] is True
-    assert "145%" in data["explanation"] or "LightGBM" in data["explanation"]
+    assert data["grounded_verified"] is False
+    assert "don't have a forecast" in data["explanation"]

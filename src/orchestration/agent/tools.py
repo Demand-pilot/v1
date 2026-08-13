@@ -1,72 +1,93 @@
+"""
+Agent tool surface for DemandPilot.
+
+Every function here answers a question about real data. When the data is absent, the
+answer is `None` or `[]` — never a stand-in. The previous implementations returned
+fabricated facts on a database miss (RMSLE 0.3812, a +145% surge, a 2480-unit forecast),
+which the agent then presented as retrieved ground truth.
+"""
+
+import logging
 import math
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+
 from src.orchestration.db.database import DatabaseRepository
 from src.orchestration.agent.rag_retriever import HybridRRFRetriever
+
+logger = logging.getLogger("demandpilot.tools")
 
 db_repo = DatabaseRepository()
 rag_retriever = HybridRRFRetriever()
 
 
-def get_forecast_logs(store_nbr: int, family: str) -> Dict[str, Any]:
+def get_forecast_logs(store_nbr: int, family: str) -> Optional[Dict[str, Any]]:
     """
-    Retrieves authoritative pre-computed predictions, backtest RMSLE, and selected model name from SQL database facts.
+    Retrieves persisted forecast facts for a series.
+
+    Returns None when no forecast exists for (store_nbr, family). A None here means
+    "this system has not forecast that series", which is a true and useful answer.
+    Callers must not substitute a number.
     """
     facts = db_repo.get_forecast_facts(store_nbr, family)
     if facts:
         return facts
-    return {
-        "store_nbr": store_nbr,
-        "family": family,
-        "selected_engine": "LightGBM_GBDT" if "SCHOOL" in family.upper() else "PyTorch_LSTM",
-        "backtest_rmsle": 0.3812 if "SCHOOL" in family.upper() else 0.2150,
-        "forecast_16d_sum": 2480.0 if "SCHOOL" in family.upper() else 1600.0,
-        "baseline_16d_sum": 1012.0,
-        "surge_percentage": 145.0 if "SCHOOL" in family.upper() else 8.0,
-        "promo_density_train": 0.204,
-        "promo_density_test": 0.441,
-        "sierra_school_season": (store_nbr == 14 and "SCHOOL" in family.upper())
-    }
+
+    logger.info(
+        "No forecast_facts row for store=%s family=%r; returning None.", store_nbr, family
+    )
+    return None
 
 
 def search_store_knowledge(store_nbr: int, query_text: str) -> List[Dict[str, Any]]:
     """
-    Performs hybrid lexical + vector search with Reciprocal Rank Fusion (RRF) over store operational knowledge.
-    Prioritizes persisted SQL store_knowledge_docs, falling back to embedded HybridRRFRetriever.
+    Hybrid lexical + vector search (RRF) over store operational knowledge.
+
+    Returns [] when nothing matches. The previous implementation returned a synthetic
+    document with `similarity_score: 0.80` — above the 0.75 confidence gate — which made
+    the gate's low-confidence branch unreachable and guaranteed every query "found"
+    supporting evidence.
     """
     try:
         sql_docs = db_repo.hybrid_search_knowledge(query_text, store_nbr=store_nbr)
         if sql_docs:
             return sql_docs
-    except Exception as e:
-        pass
+    except Exception as err:
+        logger.warning("Knowledge search against SQL failed: %s", err)
 
     ranked_docs = rag_retriever.retrieve(query_text, store_nbr)
     results = []
     for doc in ranked_docs:
+        # No similarity default: a document with no computed score cannot be scored, and
+        # inventing 0.85 would silently clear the confidence gate.
+        score = doc.get("cosine_similarity")
         results.append({
             "doc_id": doc.get("id", "doc_unknown"),
             "store_nbr": doc.get("store_nbr", store_nbr),
             "title": doc.get("title", f"Store {store_nbr} Notes"),
             "content": doc.get("content", doc.get("text", "")),
-            "similarity_score": doc.get("cosine_similarity", 0.85),
-            "rrf_score": doc.get("rrf_score", 0.032)
+            "similarity_score": float(score) if score is not None else 0.0,
+            "rrf_score": doc.get("rrf_score", 0.0),
+            "source": doc.get("source", "UNKNOWN"),
         })
-    return results if results else [{
-        "doc_id": "doc_default",
-        "store_nbr": store_nbr,
-        "title": f"Store {store_nbr} Baseline",
-        "content": f"Operational baseline notes for Store {store_nbr}.",
-        "similarity_score": 0.80,
-        "rrf_score": 0.016
-    }]
+    return results
 
 
-def get_promo_elasticity(family: str) -> float:
+def get_promo_elasticity(family: str) -> Optional[float]:
     """
-    Fetches historical promo-to-sales correlation score for a given family from SQL table.
+    Fetches the measured promo-to-sales elasticity for a family.
+
+    Returns None when the family has no elasticity record. The previous `0.2500` default
+    was a business constant presented as a measurement.
     """
     elasticity_record = db_repo.get_promo_elasticity(family)
-    return float(elasticity_record.get("elasticity_score", 0.2500))
+    if not elasticity_record:
+        logger.info("No promo_elasticity row for family=%r; returning None.", family)
+        return None
+
+    score = elasticity_record.get("elasticity_score")
+    if score is None:
+        return None
+    return float(score)
 
 
 def calculate_inventory_rop(forecast_avg_daily: float, lead_time_days: float = 7.0, service_factor_z: float = 1.65, std_dev_daily: float = 35.0) -> Dict[str, float]:

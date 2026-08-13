@@ -21,9 +21,9 @@ def test_redis_cache_hit_latency_sla():
         "store_nbr": 14,
         "family": "SCHOOL AND OFFICE SUPPLIES",
         "selected_engine": "LightGBM_GBDT",
-        "backtest_rmsle": 0.3812,
-        "daily_forecasts": [100.0] * 16,
-        "reorder_point": 2480.0,
+        "backtest_rmsle": 0.25,
+        "daily_forecasts": [float(i) for i in range(16)],
+        "reorder_point": 500.0,
         "safety_stock": 420.0
     }
     cache = RedisForecastCache()
@@ -55,7 +55,7 @@ def test_forecast_grid_endpoint_latency_sla():
 
 
 def test_groq_grounded_agent_response():
-    """Verify Groq Grounded Agent execution and Verification Gate pass."""
+    """With no persisted facts the agent reports no data and is not marked grounded."""
     agent = GroqGroundedAgent()
     start_time = time.time()
     explanation, is_verified, tools_used = agent.ask(
@@ -65,9 +65,10 @@ def test_groq_grounded_agent_response():
     )
     elapsed_ms = (time.time() - start_time) * 1000.0
 
-    assert is_verified is True
-    assert len(explanation) > 20
-    assert elapsed_ms < 5000.0  # Real Groq API round-trip SLA < 5s (includes tool retry)
+    assert is_verified is False
+    assert "don't have a forecast" in explanation
+    assert "get_forecast_logs" in tools_used
+    assert elapsed_ms < 5000.0
 
 
 def test_profiler_latency_sla():

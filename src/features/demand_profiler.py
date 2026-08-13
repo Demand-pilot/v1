@@ -1,7 +1,9 @@
 """
 Automated Demand Profiler for DemandPilot Layer 3.
-Profiles 1,782 time series by CV, Zero Ratio, and Promo Elasticity,
-segmenting series into 4 candidate sub-domains.
+
+Profiles time series by CV, zero ratio, and promo elasticity, segmenting them into
+candidate sub-domains. The number of series is a property of the dataset, not of this
+module; the docstring previously hardcoded "1,782", which is Favorita's count.
 """
 
 from typing import Dict, Any, List
@@ -11,9 +13,14 @@ import pandas as pd
 
 class DemandProfiler:
     """
-    Evaluates series statistics (CV, Zero Ratio, Promo Elasticity)
+    Evaluates series statistics (CV, zero ratio, promo elasticity)
     and routes them to target model sub-domains.
     """
+
+    # A series is only called "permanently" zero if it has been observed long enough for
+    # the claim to mean something. Exposed as a named constant so the dataset adapter can
+    # override it in Phase 2 rather than it living as a bare `> 500` in a conditional.
+    MIN_HISTORY_FOR_PERMANENT_ZERO: int = 500
 
     @staticmethod
     def compute_cv(sales_series: pd.Series) -> float:
@@ -60,13 +67,17 @@ class DemandProfiler:
             else 0.0
         )
 
-        # Rule 1: Permanent Zero Series (53 series)
-        if zero_ratio >= 0.99 and len(sales_series) > 500:
+        # Rule 1: Permanent-zero series.
+        # The count is whatever the data says. The previous comment asserted "(53 series)",
+        # a figure repeated across the docs while the hardcoded set used elsewhere
+        # (BOOKS plus stores 35 and 52 x BABY CARE) actually yielded 56. Neither number was
+        # derived; callers must log the count they actually observe.
+        if zero_ratio >= 0.99 and len(sales_series) > cls.MIN_HISTORY_FOR_PERMANENT_ZERO:
             return {
                 "store_nbr": store_nbr,
                 "family": family,
                 "sub_domain": "PERMANENT_ZERO",
-                "target_engine": "HARDCODED_ZERO_MASK",
+                "target_engine": "ZERO_MASK",
                 "cv": cv,
                 "zero_ratio": zero_ratio,
                 "promo_elasticity": promo_elasticity,

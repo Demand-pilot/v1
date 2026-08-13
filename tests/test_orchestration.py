@@ -26,43 +26,37 @@ def test_health_endpoint():
 
 
 def test_forecast_grid_contract():
-    """Verify GET /api/v1/forecast/grid matches exact Layer 1 contract schema."""
+    """With no trained model, the grid reports an explicit empty state."""
     response = client.get("/api/v1/forecast/grid?store_id=14&family=SCHOOL%20AND%20OFFICE%20SUPPLIES")
     assert response.status_code == 200
-    data = response.json()
+    grid_obj = ForecastGridResponse(**response.json())
 
-    # Validate against Pydantic schema
-    grid_obj = ForecastGridResponse(**data)
-    assert grid_obj.status == "success"
-    assert grid_obj.horizon_days == 16
-    assert grid_obj.start_date == "2017-08-16"
-    assert grid_obj.end_date == "2017-08-31"
-
-    item = grid_obj.data[0]
-    assert item.store_nbr == 14
-    assert item.family == "SCHOOL AND OFFICE SUPPLIES"
-    assert item.selected_engine == "LightGBM_GBDT"
-    assert len(item.daily_forecasts) == 16
-    assert item.reorder_point > 0
-    assert item.safety_stock > 0
+    # forecast_facts is empty until the Phase 3 inference path runs. The endpoint used to
+    # answer this with engine "LightGBM_GBDT", RMSLE 0.3812 and [100.0] * 16.
+    assert grid_obj.status == "no_forecast_available"
+    assert grid_obj.data == []
+    assert grid_obj.horizon_days == 0
+    assert grid_obj.start_date is None
+    assert grid_obj.end_date is None
 
 
 def test_agent_chat_contract():
-    """Verify POST /api/v1/agent/chat natural language Q&A flow."""
+    """Chat about a series with no forecast reports that it has no data."""
     payload = {
         "user_id": "mgr_store_14",
         "user_role": "STORE_MANAGER",
-        "query": "Why is School Supplies surging by +145% at Store 14 in late August?"
+        "query": "Why is School Supplies surging at Store 14 in late August?"
     }
     response = client.post("/api/v1/agent/chat", json=payload)
     assert response.status_code == 200
-    data = response.json()
 
-    chat_obj = AgentChatResponse(**data)
+    chat_obj = AgentChatResponse(**response.json())
     assert chat_obj.status == "success"
-    assert chat_obj.grounded_verified is True
-    assert "+145%" in chat_obj.explanation or "145%" in chat_obj.explanation
-    assert len(chat_obj.source_tools_used) > 0
+    # No forecast on record => not grounded, and the answer says so rather than
+    # asserting a +145% surge sourced from a default parameter.
+    assert chat_obj.grounded_verified is False
+    assert "don't have a forecast" in chat_obj.explanation
+    assert "145" not in chat_obj.explanation
 
 
 def test_agent_chat_streaming():
@@ -79,13 +73,17 @@ def test_agent_chat_streaming():
 
 
 def test_macro_analytics_contract():
-    """Verify GET /api/v1/analytics/macro executive dashboard endpoint."""
+    """Macro analytics reports zeros and NO_DATA when no financial returns exist."""
     response = client.get("/api/v1/analytics/macro")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "success"
-    assert data["national_demand_volume"] > 0
-    assert len(data["stores"]) > 0
+    # Previously this branch returned a fabricated national picture: 2,674,850 units,
+    # $16,526,470 revenue, $4,703,580 profit, across "54" stores.
+    assert data["stores"] == []
+    assert data["stores_count"] == 0
+    assert data["national_demand_volume"] == 0.0
+    assert data["gross_revenue_usd"] == 0.0
 
 
 def test_inventory_rop_calculation():
@@ -95,42 +93,38 @@ def test_inventory_rop_calculation():
     assert res["reorder_point"] > (100.0 * 7.0)
 
 
-def test_verification_gate_reanchoring():
-    """Verify Verification Gate corrects/anchors unverified numbers."""
+def test_verification_gate_withholds_instead_of_reanchoring():
+    """
+    An unsupported number causes the answer to be withheld.
+
+    The gate used to respond to a mismatch by discarding the answer and substituting a
+    template asserting a "+145% demand surge" built from its own default parameters,
+    turning a detected error into a more confident fabrication.
+    """
     raw_llm = "School supplies are surging by 500% at store 14."
     db_facts = {"surge_percentage": 145.0, "selected_engine": "LightGBM_GBDT", "backtest_rmsle": 0.3812}
     knowledge = [{"similarity_score": 0.90}]
 
     is_verified, explanation, _ = VerificationGate.verify_response(raw_llm, db_facts, knowledge)
-    assert is_verified is True
-    assert "+145%" in explanation  # Corrected to ground truth database surge percentage
+    assert is_verified is False
+    assert explanation is None
 
 
-def test_store_financial_returns_54_stores():
-    """Verify all 54 Ecuador stores have populated financial return records."""
+def test_store_financial_returns_empty_without_a_run():
+    """Financial returns are empty until a real forecast run writes them."""
     from src.orchestration.db.database import DatabaseRepository
     db = DatabaseRepository()
-    stores = db.get_store_financial_returns()
-    assert len(stores) == 54
-    for s in stores:
-        assert s["gross_revenue_usd"] > 0
-        assert s["return_profit_usd"] > 0
-        assert 0.15 <= s["net_margin_pct"] <= 0.40
-        assert s["region"] in ["Sierra", "Coast", "Oriente"]
+    assert db.get_store_financial_returns() == []
 
 
-def test_macro_analytics_financial_payload():
-    """Verify Executive Leadership macro analytics aggregates 54-store financial return profits."""
-    response = client.get("/api/v1/analytics/macro")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "success"
-    assert data["stores_count"] == 54
-    assert data["gross_revenue_usd"] > 1000000.0
-    assert data["return_profit_usd"] > 500000.0
-    assert "sierra" in data["regional_summary"]
-    assert "coast" in data["regional_summary"]
-    assert data["regional_summary"]["sierra"]["count"] > 0
+def test_macro_analytics_reports_no_data_status():
+    """The macro payload marks itself NO_DATA rather than inventing headline figures."""
+    from src.orchestration.db.database import DatabaseRepository
+    db = DatabaseRepository()
+    data = db.get_macro_analytics()
+    assert data["data_status"] == "NO_DATA"
+    assert data["avg_net_margin_pct"] is None
+    assert data["return_profit_usd"] == 0.0
 
 
 def test_auth_jwt_validation_and_rbac():
@@ -187,35 +181,43 @@ def test_purchase_order_submission_and_audit():
 
 
 def test_hybrid_rrf_retrieval_ranking():
-    """Verify Reciprocal Rank Fusion formula and document scoring."""
+    """RRF ranking over persisted documents returns real scores, or [] when nothing matches."""
     from src.orchestration.db.database import DatabaseRepository
     db = DatabaseRepository()
-    
-    results = db.hybrid_search_knowledge(query_text="school supplies spike August", store_nbr=14, family="SCHOOL AND OFFICE SUPPLIES")
+
+    results = db.hybrid_search_knowledge(
+        query_text="academic campaign restock", store_nbr=14, family="SCHOOL AND OFFICE SUPPLIES"
+    )
     assert len(results) > 0
     top_doc = results[0]
-    assert "rrf_score" in top_doc
     assert top_doc["rrf_score"] > 0
-    assert "SCHOOL" in top_doc["title"].upper() or "SIERRA" in top_doc["title"].upper()
+    assert 0.0 < top_doc["similarity_score"] <= 1.0
+    assert top_doc["source"] == "SEED_EXAMPLE"
+
+    # Zero lexical overlap must yield nothing at all.
+    assert db.hybrid_search_knowledge(query_text="zzzqqq xyzzy nonexistent") == []
 
 
-def test_store_operations_snapshot_zero_numpy_sin():
-    """Verify store operations snapshot uses real persisted facts and returns LIVE data status."""
+def test_store_operations_snapshot_reports_missing_data_honestly():
+    """The snapshot reports absent forecasts and inventory instead of inventing them."""
     from src.orchestration.db.database import DatabaseRepository
     db = DatabaseRepository()
-    
+
     snapshot = db.get_store_operations_snapshot(store_nbr=14)
     assert snapshot["store_id"] == 14
-    assert snapshot["data_status"] == "LIVE"
-    assert snapshot["as_of"] == "2017-08-15T08:00:00Z"
-    assert len(snapshot["categories"]) > 0
-    assert len(snapshot["priority_actions"]) > 0
-    
-    school_cat = next(c for c in snapshot["categories"] if "SCHOOL" in c["family"])
-    assert school_cat["days_of_cover"] > 0
-    assert len(school_cat["actual_history_28d"]) == 28
-    assert len(school_cat["actual_history_56d"]) == 56
-    assert len(school_cat["forecast_16d"]) == 16
-    assert school_cat["audit_details"]["selected_engine"] == "LightGBM_GBDT"
+    # Store metadata is real (seeded), so the store resolves...
+    assert snapshot["city"] == "Quito"
+    # ...but there is no forecast run, so there are no categories and no actions.
+    assert snapshot["data_status"] == "NO_FORECAST_AVAILABLE"
+    assert snapshot["categories"] == []
+    assert snapshot["priority_actions"] == []
+    assert snapshot["as_of"] is None
+    assert snapshot["forecast_run_id"] is None
+    assert snapshot["summary_metrics"]["total_on_hand_units"] is None
 
 
+def test_store_operations_snapshot_unknown_store_returns_none():
+    """An unknown store yields None, not metadata guessed from the store number."""
+    from src.orchestration.db.database import DatabaseRepository
+    db = DatabaseRepository()
+    assert db.get_store_operations_snapshot(store_nbr=9999) is None

@@ -91,6 +91,10 @@ CREATE TABLE IF NOT EXISTS store_knowledge_docs (
     valid_from DATE,
     valid_to DATE,
     embedding_json TEXT, -- Serialized vector embedding
+    -- Provenance. 'SEED_EXAMPLE' rows are illustrative fixtures shipped with the repo and
+    -- are NOT operator-authored notes; the agent must be able to tell them apart from
+    -- 'OPERATOR' rows before citing them as evidence.
+    source VARCHAR(32) NOT NULL DEFAULT 'OPERATOR',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -144,6 +148,36 @@ CREATE TABLE IF NOT EXISTS promo_elasticity (
     category_classification VARCHAR(32) NOT NULL,
     surge_risk_tier VARCHAR(16) NOT NULL
 );
+
+-- 8b. Observed inventory positions.
+-- The store operations snapshot previously invented on-hand quantities in code
+-- (480.0 for Sierra school supplies, 1240.0 for beverages, forecast_avg * 8 otherwise)
+-- because no table held them. It now reads this table and reports NULL when a position
+-- is unknown, because an unknown stock level is not a zero and is not a guess.
+CREATE TABLE IF NOT EXISTS inventory_positions (
+    store_nbr INTEGER NOT NULL,
+    family VARCHAR(64) NOT NULL,
+    on_hand_units FLOAT NOT NULL,
+    observed_at TIMESTAMP NOT NULL,
+    source VARCHAR(32) NOT NULL DEFAULT 'WMS',
+    PRIMARY KEY (store_nbr, family),
+    FOREIGN KEY (store_nbr) REFERENCES store_metadata(store_nbr)
+);
+
+-- 8c. Observed daily sales history.
+-- Previously the snapshot "reconstructed" 28-day and 56-day actual history from the
+-- forecast's own average velocity and returned it as `actual_history_28d`. That is
+-- forecast echoed back as observation. Real observations live here or nowhere.
+CREATE TABLE IF NOT EXISTS sales_history (
+    store_nbr INTEGER NOT NULL,
+    family VARCHAR(64) NOT NULL,
+    date DATE NOT NULL,
+    units FLOAT NOT NULL,
+    PRIMARY KEY (store_nbr, family, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sales_hist_store_fam_date
+    ON sales_history(store_nbr, family, date);
 
 -- 9. Order Plans & Replenishment Drafts
 CREATE TABLE IF NOT EXISTS order_plans (

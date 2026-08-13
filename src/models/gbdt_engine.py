@@ -7,6 +7,8 @@ from typing import Dict, Any, List, Optional
 import numpy as np
 import pandas as pd
 
+from src.models.exceptions import ModelNotFittedError
+
 
 class DemandGBDT:
     """
@@ -72,18 +74,24 @@ class DemandGBDT:
         Applies inverse log transformation expm1(y_pred).
         """
         if not self.is_fitted or self.model is None:
-            # Baseline fallback
-            return np.ones(len(X_test_16d)) * 100.0
+            raise ModelNotFittedError(
+                "DemandGBDT.predict_16d() called before fit(). "
+                "This previously returned np.ones(n) * 100.0, which the API served to the "
+                "dashboard as a forecast. Fit the model, or handle this exception by "
+                "surfacing an empty state."
+            )
 
         X_clean = X_test_16d.copy()
         for col in X_clean.select_dtypes(include=['category', 'object']).columns:
             X_clean[col] = X_clean[col].astype('category').cat.codes
         X_clean = X_clean.fillna(0.0)
 
-        if hasattr(self.model, 'predict'):
-            log_preds = self.model.predict(X_clean)
-        else:
-            log_preds = np.zeros(len(X_clean))
+        if not hasattr(self.model, 'predict'):
+            raise ModelNotFittedError(
+                f"Fitted model object of type {type(self.model).__name__} exposes no "
+                f"predict(). Previously this silently returned zeros."
+            )
+        log_preds = self.model.predict(X_clean)
 
         preds = np.expm1(log_preds)
         return np.clip(preds, 0.0, None)

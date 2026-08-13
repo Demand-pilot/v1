@@ -29,7 +29,7 @@ class MediatorEngine:
         # Rule 1: Permanent Zero Series Bypass (53 Series)
         if series_profile.get("is_permanent_zero", False):
             return {
-                "strategy": "HARDCODED_ZERO_MASK",
+                "strategy": "ZERO_MASK",
                 "selected_model": "HARDCODED_ZERO",
                 "weights": {"HARDCODED_ZERO": 1.0},
                 "raw_forecast": np.zeros(16),

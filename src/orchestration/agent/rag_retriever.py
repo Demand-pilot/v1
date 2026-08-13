@@ -1,91 +1,132 @@
 """
-Hybrid Lexical + Vector RAG Retriever with Reciprocal Rank Fusion (RRF) for DemandPilot Layer 2.
-Combines PostgreSQL tsvector full-text search with pgvector similarity search,
-ranked via RRF formula: RRF(d) = sum(1 / (60 + rank_m(d))).
+Hybrid retriever with Reciprocal Rank Fusion (RRF) for DemandPilot Layer 2.
+
+RRF(d) = sum over rank lists m of 1 / (k + rank_m(d)).
+
+The fusion algorithm here is real and is kept. What was removed is the corpus: both
+`lexical_search` and `vector_search` previously ranked a hardcoded in-module list of
+three or four documents whose text asserted "+145%" surges and "backtest RMSLE of
+0.3812", and `vector_search` attached invented `cosine_similarity` values (0.9421,
+0.8850, 0.8120) that were never computed from any embedding. Those documents were then
+returned to the agent as retrieved evidence and cross-checked by the verification gate,
+which is how invented figures acquired the appearance of provenance.
+
+This retriever now ranks a corpus supplied by the caller (in practice, rows from
+`store_knowledge_docs`). With no corpus, it returns [] — which is the correct answer to
+"what do we know about this?" when the answer is "nothing".
 """
 
-import math
 import logging
-from typing import List, Dict, Any, Optional
+import re
+from typing import List, Dict, Any, Optional, Sequence
 
 logger = logging.getLogger("demandpilot.rag_retriever")
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def _tokenize(text: str) -> List[str]:
+    return _TOKEN_RE.findall((text or "").lower())
 
 
 class HybridRRFRetriever:
     """
-    Hybrid Retriever executing Reciprocal Rank Fusion (RRF) over Lexical and Vector search results.
+    Ranks a document corpus by fusing lexical and (when available) vector rank lists.
+
+    Args:
+        k_rrf: RRF smoothing constant.
+        corpus: documents to search. Each is a dict with at least `id` and `text`, and
+            optionally `store_nbr`, `family`, `embedding`, `source`. When None, the
+            retriever has nothing to search and every query returns [].
+        embedder: callable mapping text -> vector, used for genuine similarity search.
+            When None, no vector arm runs. Nothing is simulated in its absence.
     """
 
-    def __init__(self, k_rrf: int = 60):
+    def __init__(
+        self,
+        k_rrf: int = 60,
+        corpus: Optional[Sequence[Dict[str, Any]]] = None,
+        embedder=None,
+    ):
         self.k_rrf = k_rrf
+        self.corpus: List[Dict[str, Any]] = list(corpus) if corpus else []
+        self.embedder = embedder
 
-    def lexical_search(self, query: str, store_nbr: int, top_k: int = 5) -> List[Dict[str, Any]]:
+    def _candidates(self, store_nbr: Optional[int]) -> List[Dict[str, Any]]:
         """
-        Simulates PostgreSQL tsvector full-text search over store operational notes and promo events.
+        Documents visible for a store: those scoped to it plus global docs.
+
+        The previous filter was `doc["store_nbr"] == store_nbr or doc["store_nbr"] == 14`,
+        which leaked store 14's notes into every other store's results.
         """
-        knowledge_db = [
-            {
-                "id": "doc_101",
-                "store_nbr": 14,
-                "family": "SCHOOL AND OFFICE SUPPLIES",
-                "text": "Sierra academic year begins mid-August. Store 14 historical sales surge by +145% due to back-to-school promotional campaign.",
-                "keywords": ["sierra", "academic", "august", "surge", "school", "promotion"]
-            },
-            {
-                "id": "doc_102",
-                "store_nbr": 14,
-                "family": "ALL",
-                "text": "Store 14 inventory reorder lead time is 7 days. Buffer safety stock required for high-velocity families during August.",
-                "keywords": ["inventory", "reorder", "lead time", "safety stock", "august"]
-            },
-            {
-                "id": "doc_103",
-                "store_nbr": 1,
-                "family": "GROCERY I",
-                "text": "Store 1 Grocery I maintains steady volume with 1st and 16th bi-weekly payday surges of +8.0%.",
-                "keywords": ["grocery", "payday", "surges", "bi-weekly"]
-            }
+        if store_nbr is None:
+            return list(self.corpus)
+        return [
+            d for d in self.corpus
+            if d.get("store_nbr") in (store_nbr, 0, None)
         ]
 
-        query_terms = [t.lower() for t in query.split()]
-        matches = []
-        for doc in knowledge_db:
-            if doc["store_nbr"] == store_nbr or doc["store_nbr"] == 14:
-                overlap = sum(1 for term in query_terms if term in doc["keywords"] or term in doc["text"].lower())
-                if overlap > 0:
-                    matches.append({"doc": doc, "score": overlap})
+    def lexical_search(
+        self, query: str, store_nbr: Optional[int] = None, top_k: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Token-overlap ranking over the corpus. Returns [] when nothing overlaps."""
+        query_terms = set(_tokenize(query))
+        if not query_terms:
+            return []
 
-        matches = sorted(matches, key=lambda x: x["score"], reverse=True)
-        return [m["doc"] for m in matches[:top_k]]
+        scored = []
+        for doc in self._candidates(store_nbr):
+            haystack = set(_tokenize(doc.get("text", doc.get("content", ""))))
+            haystack.update(_tokenize(" ".join(doc.get("keywords", []))))
+            overlap = len(query_terms & haystack)
+            if overlap > 0:
+                scored.append((overlap, doc))
 
-    def vector_search(self, query: str, store_nbr: int, top_k: int = 5) -> List[Dict[str, Any]]:
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        return [doc for _, doc in scored[:top_k]]
+
+    def vector_search(
+        self, query: str, store_nbr: Optional[int] = None, top_k: int = 5
+    ) -> List[Dict[str, Any]]:
         """
-        Simulates pgvector HNSW embedding similarity search.
-        """
-        vector_db = [
-            {
-                "id": "doc_101",
-                "store_nbr": 14,
-                "text": "Sierra academic year begins mid-August. Store 14 historical sales surge by +145% due to back-to-school promotional campaign.",
-                "cosine_similarity": 0.9421
-            },
-            {
-                "id": "doc_104",
-                "store_nbr": 14,
-                "text": "LightGBM GBDT engine selected with backtest RMSLE of 0.3812 for promo-elastic surge handling.",
-                "cosine_similarity": 0.8850
-            },
-            {
-                "id": "doc_102",
-                "store_nbr": 14,
-                "text": "Store 14 inventory reorder lead time is 7 days. Buffer safety stock required for high-velocity families during August.",
-                "cosine_similarity": 0.8120
-            }
-        ]
+        Embedding similarity search.
 
-        matches = [d for d in vector_db if d["store_nbr"] == store_nbr or store_nbr == 14]
-        matches = sorted(matches, key=lambda x: x["cosine_similarity"], reverse=True)
-        return matches[:top_k]
+        Returns [] when no embedder is configured or no document carries an embedding.
+        It does not fabricate cosine similarities, because a fabricated similarity above
+        the confidence threshold silently disables the low-confidence branch downstream.
+        """
+        if self.embedder is None:
+            return []
+
+        query_vec = self.embedder(query)
+        if query_vec is None:
+            return []
+
+        scored = []
+        for doc in self._candidates(store_nbr):
+            emb = doc.get("embedding")
+            if emb is None:
+                continue
+            sim = self._cosine(query_vec, emb)
+            if sim is None:
+                continue
+            enriched = dict(doc)
+            enriched["cosine_similarity"] = sim
+            scored.append((sim, enriched))
+
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        return [doc for _, doc in scored[:top_k]]
+
+    @staticmethod
+    def _cosine(a: Sequence[float], b: Sequence[float]) -> Optional[float]:
+        if a is None or b is None or len(a) != len(b):
+            return None
+        dot = sum(x * y for x, y in zip(a, b))
+        na = sum(x * x for x in a) ** 0.5
+        nb = sum(y * y for y in b) ** 0.5
+        if na == 0.0 or nb == 0.0:
+            return None
+        return dot / (na * nb)
 
     def combine_rrf(
         self,
@@ -94,41 +135,37 @@ class HybridRRFRetriever:
         top_k: int = 3
     ) -> List[Dict[str, Any]]:
         """
-        Reciprocal Rank Fusion (RRF) algorithm:
-        RRF(d) = sum(1 / (k_rrf + rank_m(d))) across lexical and vector rank lists.
+        Reciprocal Rank Fusion over the two rank lists.
+        RRF(d) = sum(1 / (k_rrf + rank_m(d))).
         """
         rrf_scores: Dict[str, float] = {}
         doc_map: Dict[str, Dict[str, Any]] = {}
 
-        # 1. Rank Lexical Results
-        for rank, doc in enumerate(lexical_docs, start=1):
-            doc_id = doc["id"]
-            doc_map[doc_id] = doc
-            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + (1.0 / (self.k_rrf + rank))
+        for rank_list in (lexical_docs, vector_docs):
+            for rank, doc in enumerate(rank_list, start=1):
+                doc_id = doc["id"]
+                if doc_id not in doc_map:
+                    doc_map[doc_id] = doc
+                elif "cosine_similarity" in doc:
+                    doc_map[doc_id] = {**doc_map[doc_id], **doc}
+                rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + (1.0 / (self.k_rrf + rank))
 
-        # 2. Rank Vector Results
-        for rank, doc in enumerate(vector_docs, start=1):
-            doc_id = doc["id"]
-            if doc_id not in doc_map:
-                doc_map[doc_id] = doc
-            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + (1.0 / (self.k_rrf + rank))
-
-        # 3. Sort by aggregated RRF score
-        sorted_doc_ids = sorted(rrf_scores.keys(), key=lambda did: rrf_scores[did], reverse=True)
+        sorted_doc_ids = sorted(rrf_scores, key=lambda did: rrf_scores[did], reverse=True)
 
         ranked_results = []
         for did in sorted_doc_ids[:top_k]:
-            item = doc_map[did].copy()
-            item["content"] = item.get("text", "")
+            item = dict(doc_map[did])
+            item["content"] = item.get("content") or item.get("text", "")
             item["rrf_score"] = round(rrf_scores[did], 6)
             ranked_results.append(item)
 
         return ranked_results
 
-    def retrieve(self, query: str, store_nbr: int = 14) -> List[Dict[str, Any]]:
-        """
-        Runs hybrid lexical + vector retrieval with RRF ranking.
-        """
+    def retrieve(self, query: str, store_nbr: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Runs hybrid retrieval with RRF ranking. Returns [] on an empty corpus."""
+        if not self.corpus:
+            logger.info("HybridRRFRetriever has no corpus configured; returning [].")
+            return []
         lexical_res = self.lexical_search(query, store_nbr)
         vector_res = self.vector_search(query, store_nbr)
         return self.combine_rrf(lexical_res, vector_res)

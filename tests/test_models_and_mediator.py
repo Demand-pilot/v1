@@ -100,7 +100,7 @@ def test_mediator_rule_1_zero_bypass():
     }
 
     res = MediatorEngine.route_and_ensemble(profile, errors, candidates)
-    assert res["strategy"] == "HARDCODED_ZERO_MASK"
+    assert res["strategy"] == "ZERO_MASK"
     assert np.all(res["raw_forecast"] == 0.0)
 
 

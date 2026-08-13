@@ -1,18 +1,28 @@
 """
-DemandPilot Future 16-Day Forecast Generation & SQL Database Population Pipeline.
-Computes 16-day forecasts (2017-08-16 to 2017-08-31) across all 1,782 series,
-applies the Mediator Agent tournament routing, calculates store return profits,
-and populates the SQL database tables.
+DemandPilot reference-metadata seeding for the SQLite database.
+
+SCOPE: this script seeds genuine reference metadata only — store metadata, category
+economics, and clearly-labelled example knowledge documents.
+
+It does NOT produce forecasts. The previous `generate_forecast_facts_and_returns()`
+function was deleted: it fabricated every `forecast_facts` row from
+`base_vol * dow_factor * payday_factor * school_factor` and drew "backtest RMSLE"
+from `np.random.normal`, with no model and no `train.csv` involved. Forecast facts are
+now written exclusively by the real inference path (Phase 3).
+
+Until that path runs, `forecast_facts` is legitimately empty and the API must report an
+empty state rather than substitute numbers.
 """
 
 import os
-import json
 import sqlite3
-import numpy as np
-import pandas as pd
 
 DB_PATH = os.environ.get("SQLITE_DB_PATH", "demandpilot.db")
-SCHEMA_PATH = os.path.join("src", "orchestration", "db", "schema.sql")
+
+# Resolved relative to this file, not the working directory, so the script works from
+# anywhere and under pytest.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCHEMA_PATH = os.path.join(_REPO_ROOT, "src", "orchestration", "db", "schema.sql")
 
 def initialize_database():
     """Initializes the database schema cleanly."""
@@ -35,7 +45,7 @@ def initialize_database():
         cursor.executescript(f.read())
     conn.commit()
     conn.close()
-    print(f"[1/5] Initialized clean SQL database schema at {DB_PATH}")
+    print(f"[1/4] Initialized clean SQL database schema at {DB_PATH}")
 
 def seed_store_metadata():
     """Seeds all 54 stores across Ecuador."""
@@ -106,7 +116,7 @@ def seed_store_metadata():
     """, stores_data)
     conn.commit()
     conn.close()
-    print(f"[2/5] Seeded {len(stores_data)} Ecuador stores into store_metadata")
+    print(f"[2/4] Seeded {len(stores_data)} Ecuador stores into store_metadata")
 
 def seed_category_economics():
     """Seeds all 33 competition product families with economic prices & margins."""
@@ -155,187 +165,71 @@ def seed_category_economics():
     """, categories)
     conn.commit()
     conn.close()
-    print(f"[3/5] Seeded {len(categories)} product families into category_economics")
-
-def generate_forecast_facts_and_returns():
-    """Generates 1,782 series predictions, mediator tournament assignments, and store financial returns."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    # Load stores & categories
-    stores_df = pd.read_sql("SELECT * FROM store_metadata", conn)
-    categories_df = pd.read_sql("SELECT * FROM category_economics", conn)
-
-    # 16-day forecast horizon (Aug 16 - Aug 31, 2017)
-    horizon_days = 16
-    run_id = "run_20170815_prod_001"
-
-    # Insert run
-    cursor.execute("""
-        INSERT OR REPLACE INTO forecast_runs (run_id, cutoff_date, horizon_days, selected_model, overall_rmsle)
-        VALUES (?, '2017-08-15', 16, 'Mediator_Tournament_Hybrid', 0.4239)
-    """, (run_id,))
-
-    forecast_facts_rows = []
-    store_financial_map = {}
-
-    for _, store in stores_df.iterrows():
-        store_nbr = int(store['store_nbr'])
-        is_sierra = store['region'] == 'Sierra'
-        is_tier1 = store['revenue_tier'] == 'TIER_1'
-        lead_time = int(store['lead_time_days'])
-
-        store_volume_sum = 0.0
-        store_revenue_sum = 0.0
-        store_profit_sum = 0.0
-
-        for _, cat in categories_df.iterrows():
-            family = cat['family']
-            price = float(cat['avg_unit_price_usd'])
-            margin_pct = float(cat['gross_margin_pct'])
-            holding_cost_factor = float(cat['holding_cost_factor'])
-            elasticity = float(cat['promo_elasticity'])
-
-            # Base volume scaling by store tier & category
-            base_vol = 100.0 if is_tier1 else 55.0
-            if family in ['GROCERY I', 'BEVERAGES', 'PRODUCE', 'CLEANING', 'DAIRY']:
-                base_vol *= 3.2
-            elif family in ['SCHOOL AND OFFICE SUPPLIES']:
-                base_vol *= (2.4 if is_sierra else 0.8)
-
-            # Check permanent zero
-            is_zero = family == 'BOOKS' or (store_nbr in [35, 52] and family == 'BABY CARE')
-
-            if is_zero:
-                selected_engine = 'Zero_Mask_Rule'
-                backtest_rmsle = 0.0000
-                daily_forecasts = [0.0] * horizon_days
-                reorder_point = 0.0
-                safety_stock = 0.0
-                surge_pct = 0.0
-                promo_density_train = 0.0
-                promo_density_test = 0.0
-            else:
-                # Mediator Routing: LightGBM for promo elastic / Sierra school, LSTM for smooth staples
-                if elasticity > 0.45 or (family == 'SCHOOL AND OFFICE SUPPLIES' and is_sierra):
-                    selected_engine = 'LightGBM_GBDT'
-                    backtest_rmsle = float(np.clip(0.32 + np.random.normal(0, 0.03), 0.28, 0.42))
-                else:
-                    selected_engine = 'PyTorch_LSTM'
-                    backtest_rmsle = float(np.clip(0.20 + np.random.normal(0, 0.02), 0.17, 0.26))
-
-                # Daily forecast values over 16 days
-                daily_forecasts = []
-                for d in range(horizon_days):
-                    dow_factor = 1.25 if d % 7 in [4, 5] else 0.95
-                    payday_factor = 1.15 if d in [0, 15] else 1.0
-                    school_factor = 1.45 if (family == 'SCHOOL AND OFFICE SUPPLIES' and is_sierra and d >= 9) else 1.0
-                    val = base_vol * dow_factor * payday_factor * school_factor
-                    daily_forecasts.append(round(float(val), 1))
-
-                fc_sum = sum(daily_forecasts)
-                fc_avg = fc_sum / horizon_days
-                std_dev = fc_avg * 0.25
-                safety_stock = round(1.65 * std_dev * np.sqrt(lead_time), 1)
-                reorder_point = round((fc_avg * lead_time) + safety_stock, 1)
-                surge_pct = 145.0 if (family == 'SCHOOL AND OFFICE SUPPLIES' and is_sierra) else (8.0 if d in [0, 15] else 0.0)
-                promo_density_train = 0.204
-                promo_density_test = 0.441
-
-            fc_sum = sum(daily_forecasts)
-            fc_avg = fc_sum / horizon_days if horizon_days > 0 else 0.0
-            proj_revenue = fc_sum * price
-            proj_profit = proj_revenue * margin_pct - (fc_sum * price * holding_cost_factor * 0.5)
-
-            store_volume_sum += fc_sum
-            store_revenue_sum += proj_revenue
-            store_profit_sum += proj_profit
-
-            forecast_facts_rows.append((
-                run_id, store_nbr, family, selected_engine, backtest_rmsle,
-                fc_sum, fc_avg, reorder_point, safety_stock, surge_pct,
-                promo_density_train, promo_density_test, proj_revenue, proj_profit,
-                json.dumps(daily_forecasts)
-            ))
-
-        # Store financial summary record
-        net_margin = store_profit_sum / store_revenue_sum if store_revenue_sum > 0 else 0.25
-        holding_savings = store_revenue_sum * 0.042
-        risk_score = 0.85 if store_nbr in [14, 52, 3, 48] else (0.45 if store_nbr in [25, 44] else 0.20)
-        reorder_status = "CRITICAL" if risk_score > 0.8 else ("WARNING" if risk_score > 0.4 else "OK")
-        primary_surge = "Sierra Academic Surge (+145%)" if is_sierra else "Coastal Payday Peak (+8.0%)"
-
-        store_financial_map[store_nbr] = (
-            store_nbr, store['city'], store['state'], store['region'], store['store_type'], int(store['cluster']),
-            round(store_volume_sum, 1), round(store_revenue_sum, 2), round(store_profit_sum, 2),
-            round(net_margin, 4), round(holding_savings, 2), risk_score, reorder_status, primary_surge
-        )
-
-    # Insert forecast facts
-    cursor.executemany("""
-        INSERT OR REPLACE INTO forecast_facts (
-            run_id, store_nbr, family, selected_engine, backtest_rmsle,
-            forecast_16d_sum, forecast_avg_daily, reorder_point, safety_stock,
-            surge_percentage, promo_density_train, promo_density_test,
-            projected_revenue_usd, projected_profit_usd, daily_forecasts_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, forecast_facts_rows)
-
-    # Insert store financial returns
-    cursor.executemany("""
-        INSERT OR REPLACE INTO store_financial_returns (
-            store_nbr, city, state, region, store_type, cluster,
-            forecast_16d_volume, gross_revenue_usd, return_profit_usd,
-            net_margin_pct, holding_cost_savings_usd, stockout_risk_score,
-            reorder_status, primary_surge_driver
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, list(store_financial_map.values()))
-
-    conn.commit()
-    conn.close()
-    print(f"[4/5] Inserted {len(forecast_facts_rows)} series records into forecast_facts and {len(store_financial_map)} stores into store_financial_returns")
+    print(f"[3/4] Seeded {len(categories)} product families into category_economics")
 
 def seed_store_knowledge_docs():
-    """Seeds vector-indexed store operational notes and regional knowledge."""
+    """
+    Seeds EXAMPLE store operational notes, all tagged source='SEED_EXAMPLE'.
+
+    These are illustrative logistics fixtures (lead times, buffer levels, staging advice),
+    NOT operator-authored notes and NOT model output. Every row is tagged so the retrieval
+    layer and the verification gate can refuse to cite them as measured evidence.
+
+    Deliberately stripped from the original seed text: the "+145% demand spike",
+    "promotional density increases to 44.1%", and "+8.0% shopping surge" claims. Those
+    were fabricated forecast statistics with no model behind them, and the verification
+    gate was cross-checking LLM answers against them — which is how a made-up number
+    became a "verified" fact. Qualitative direction is kept; invented magnitudes are not.
+    """
     docs = [
         ("doc_014_school", 14, "SCHOOL AND OFFICE SUPPLIES", "PROMO_PLAN",
          "Store 14 Sierra Academic Campaign Restock",
-         "Store 14 (Quito Sierra) experiences a +145% demand spike for School and Office Supplies starting August 16. Promotional density increases to 44.1%. Recommended safety buffer is 320 units with lead time of 7 days from Central Sierra Logistics Hub.",
-         1, "2017-08-01", "2017-09-15"),
+         "Store 14 (Quito, Sierra) runs an academic-season restock campaign from mid-August. "
+         "Replenishment is served by the Central Sierra Logistics Hub at a 7-day lead time. "
+         "Expected demand magnitude is not asserted here — see the forecast run for numbers.",
+         1, "2017-08-01", "2017-09-15", "SEED_EXAMPLE"),
         ("doc_014_payday", 14, "BEVERAGES", "OPERATIONAL_NOTE",
-         "Store 14 Bi-Weekly Salary Payday Surge",
-         "Salary disbursements on the 15th and 30th generate an average +8.0% shopping surge on the following day (Aug 16th). High-velocity Beverage and Grocery I aisles require pre-staged pallets to avoid stockout breaches.",
-         1, "2017-01-01", "2017-12-31"),
+         "Store 14 Bi-Weekly Salary Payday Staging",
+         "Salary disbursements land on the 15th and 30th. High-velocity Beverage and Grocery I "
+         "aisles are pre-staged with pallets the following morning to avoid stockout breaches. "
+         "Surge magnitude is not asserted here — see the forecast run for numbers.",
+         1, "2017-01-01", "2017-12-31", "SEED_EXAMPLE"),
         ("doc_025_payday", 25, "BEVERAGES", "OPERATIONAL_NOTE",
          "Store 25 Guayaquil Payday Surge Protocol",
-         "Store 25 in Guayaquil has highest coastal transaction velocity during 16th and 31st salary cycles. Recommended reorder lead time is 10 days.",
-         1, "2017-01-01", "2017-12-31"),
+         "Store 25 in Guayaquil sees elevated coastal transaction velocity around the salary "
+         "cycle. Recommended reorder lead time is 10 days.",
+         1, "2017-01-01", "2017-12-31", "SEED_EXAMPLE"),
         ("doc_052_seafood", 52, "SEAFOOD", "OPERATIONAL_NOTE",
          "Store 52 Manta Port Transit Buffer",
-         "Store 52 in Manta operates near port facilities. Coastal transit lead time is 11 days. Safety buffer must be maintained above 180 units.",
-         1, "2017-01-01", "2017-12-31"),
+         "Store 52 in Manta operates near port facilities. Coastal transit lead time is 11 days. "
+         "Safety buffer must be maintained above 180 units.",
+         1, "2017-01-01", "2017-12-31", "SEED_EXAMPLE"),
         ("doc_national_oil", 0, "ALL", "MODEL_EXPLANATION",
          "National Macro Oil Price and Wage Calendar Integration",
-         "Ecuador macroeconomic wage cycles on 15th/30th and WTI crude oil price fluctuations directly affect purchasing power across Sierra and Coast stores.",
-         1, "2017-01-01", "2017-12-31")
+         "Ecuador macroeconomic wage cycles on 15th/30th and WTI crude oil price fluctuations "
+         "are modelled as candidate drivers of purchasing power across Sierra and Coast stores. "
+         "Whether they carry signal is an empirical question answered by the evaluation run.",
+         1, "2017-01-01", "2017-12-31", "SEED_EXAMPLE")
     ]
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.executemany("""
         INSERT OR REPLACE INTO store_knowledge_docs (
-            doc_id, store_nbr, family, doc_type, title, content, approved_status, valid_from, valid_to
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            doc_id, store_nbr, family, doc_type, title, content, approved_status,
+            valid_from, valid_to, source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, docs)
     conn.commit()
     conn.close()
-    print(f"[5/5] Seeded {len(docs)} knowledge documents into store_knowledge_docs")
+    print(f"[4/4] Seeded {len(docs)} SEED_EXAMPLE knowledge documents into store_knowledge_docs")
 
 if __name__ == "__main__":
-    print("=== Starting DemandPilot SQL Database & 16-Day Forecast Population Pipeline ===")
+    print("=== Seeding DemandPilot reference metadata (no forecasts are produced here) ===")
     initialize_database()
     seed_store_metadata()
     seed_category_economics()
-    generate_forecast_facts_and_returns()
     seed_store_knowledge_docs()
-    print("=== Database & Forecast Pipeline Complete ===")
+    print("=== Reference metadata seeding complete ===")
+    print("NOTE: forecast_facts is intentionally empty. It is populated only by the")
+    print("      real inference path (scripts/train_pipeline.py, Phase 3).")

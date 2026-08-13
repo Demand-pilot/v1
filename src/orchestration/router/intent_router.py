@@ -61,32 +61,36 @@ class IntentRouter:
                 safety_stock=r["safety_stock"]
             ))
 
-        is_authentic_data = bool(items)
+        # Cache + DB miss => there is no forecast. Report that, do not manufacture one.
+        # The previous branch built an item from get_forecast_logs()'s fabricated
+        # fallback: engine "LightGBM_GBDT", RMSLE 0.3812, and [100.0] * 16 as the daily
+        # forecast curve. All of it was served to the dashboard as model output.
         if not items:
-            db_logs = get_forecast_logs(store_id, family)
-            rop_calc = calculate_inventory_rop(forecast_avg_daily=db_logs.get("forecast_16d_sum", 1600.0) / 16.0)
-            items.append(ForecastItem(
-                store_nbr=store_id,
-                family=family,
-                selected_engine=db_logs.get("selected_engine", "LightGBM_GBDT"),
-                backtest_rmsle=db_logs.get("backtest_rmsle", 0.3812),
-                daily_forecasts=db_logs.get("daily_forecasts", [100.0] * 16),
-                reorder_point=rop_calc["reorder_point"],
-                safety_stock=rop_calc["safety_stock"]
-            ))
+            logger.info(
+                "No forecast available for store=%s family=%r (cache and DB both miss).",
+                store_id, family
+            )
+            return ForecastGridResponse(
+                status="no_forecast_available",
+                horizon_days=0,
+                start_date=None,
+                end_date=None,
+                data=[]
+            )
+
+        # Horizon window comes from the persisted run, never from a hardcoded literal.
+        start_date = grid_result.get("start_date")
+        end_date = grid_result.get("end_date")
 
         response_dict = {
             "status": "success",
-            "horizon_days": 16,
-            "start_date": "2017-08-16",
-            "end_date": "2017-08-31",
+            "horizon_days": grid_result.get("horizon_days", len(items[0].daily_forecasts)),
+            "start_date": start_date,
+            "end_date": end_date,
             "data": [item.model_dump() for item in items]
         }
 
-        # Write to cache only when backed by authentic database records
-        if is_authentic_data:
-            self.cache.set_forecast(store_id, family, response_dict)
-            
+        self.cache.set_forecast(store_id, family, response_dict)
         return ForecastGridResponse(**response_dict)
 
     # Official 33 competition product families (longest to shortest for exact substring match)

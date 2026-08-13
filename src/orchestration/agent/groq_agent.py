@@ -139,16 +139,26 @@ class GroqGroundedAgent:
             for doc in knowledge[:3]
         ]) or "No specific store knowledge documents found."
 
-        facts_text = (
-            f"Store: {store_nbr}, Family: {family}\n"
-            f"Selected Engine: {retrieved_facts.get('selected_engine', 'N/A')}\n"
-            f"Backtest RMSLE: {retrieved_facts.get('backtest_rmsle', 'N/A')}\n"
-            f"16-Day Forecast Sum: {retrieved_facts.get('forecast_16d_sum', 'N/A')} units\n"
-            f"Baseline 16-Day Sum: {retrieved_facts.get('baseline_16d_sum', 'N/A')} units\n"
-            f"Surge Percentage: +{retrieved_facts.get('surge_percentage', 0):.0f}%\n"
-            f"Promo Density (Train): {retrieved_facts.get('promo_density_train', 0)*100:.1f}%\n"
-            f"Promo Density (Test): {retrieved_facts.get('promo_density_test', 0)*100:.1f}%"
-        )
+        # Only keys actually present are stated. The previous version printed
+        # "Surge Percentage: +0%" and "Promo Density (Train): 0.0%" when those fields were
+        # absent, handing the model zeros that read as measurements.
+        fact_lines = [f"Store: {store_nbr}, Family: {family}"]
+        for label, key, fmt in (
+            ("Selected Engine", "selected_engine", None),
+            ("Backtest RMSLE", "backtest_rmsle", "{:.4f}"),
+            ("Forecast Sum", "forecast_16d_sum", "{:.1f} units"),
+            ("Forecast Avg Daily", "forecast_avg_daily", "{:.1f} units/day"),
+            ("Reorder Point", "reorder_point", "{:.1f}"),
+            ("Safety Stock", "safety_stock", "{:.1f}"),
+            ("Surge Percentage", "surge_percentage", "{:+.1f}%"),
+            ("Run ID", "run_id", None),
+        ):
+            value = retrieved_facts.get(key)
+            if value is None:
+                continue
+            fact_lines.append(f"{label}: {fmt.format(value) if fmt else value}")
+
+        facts_text = "\n".join(fact_lines)
 
         memory_context = memory.get_context_prompt()
 
@@ -195,6 +205,21 @@ class GroqGroundedAgent:
         knowledge = search_store_knowledge(store_nbr, query)
         prefetch_tools = ["get_forecast_logs", "search_store_knowledge"]
         groq_called_tools: List[str] = []
+
+        # No facts => say so. There is nothing to ground an answer in, and the model must
+        # not be asked to write one. get_forecast_logs() now returns None on a miss
+        # instead of a fabricated record, so this branch is reachable.
+        if not retrieved_facts:
+            memory = self._get_memory(session_id)
+            memory.add_turn("user", query)
+            no_data = (
+                f"I don't have a forecast on record for store {store_nbr} / {family!r}, "
+                f"so I can't answer that. Run the forecast pipeline for this series first."
+            )
+            memory.add_turn("assistant", no_data)
+            logger.info("No retrieved facts for store=%s family=%r; answering NO_DATA.",
+                        store_nbr, family)
+            return no_data, False, prefetch_tools
 
         # Get conversation memory
         memory = self._get_memory(session_id)
@@ -261,21 +286,67 @@ class GroqGroundedAgent:
                     raw_text, retrieved_facts, knowledge
                 )
 
-                # Record assistant response in memory
-                memory.add_turn("assistant", verified_explanation)
+                # A withheld answer is withheld. The gate returns None on failure and the
+                # answer is replaced by an explicit refusal, never by a rewritten claim.
+                answer = verified_explanation if is_verified else self._withheld_message(
+                    store_nbr, family
+                )
+                memory.add_turn("assistant", answer)
 
                 all_tools = list(set(prefetch_tools + groq_called_tools))
-                return verified_explanation, is_verified, all_tools
+                return answer, is_verified, all_tools
             except Exception as err:
-                logger.warning(f"Groq API call error: {err}. Falling back to grounded RAG engine.")
+                logger.warning(f"Groq API call error: {err}. Falling back to fact rendering.")
 
-        # Grounded RAG Fallback
-        raw_draft = (
-            f"Store {store_nbr} ({family}) exhibits a +{retrieved_facts['surge_percentage']:.0f}% demand surge in late August. "
-            f"This surge is driven by the Sierra academic season and active promo density increasing "
-            f"from {retrieved_facts['promo_density_train']*100:.1f}% to {retrieved_facts['promo_density_test']*100:.1f}%. "
-            f"Selected Engine: {retrieved_facts['selected_engine']} (Backtest RMSLE: {retrieved_facts['backtest_rmsle']})."
+        # No LLM available. Render the retrieved facts literally, with no causal story.
+        #
+        # The previous fallback asserted "+{surge}% demand surge ... driven by the Sierra
+        # academic season and active promo density increasing from X% to Y%" — a causal
+        # explanation the system had never tested, built from fields that were themselves
+        # fabricated defaults. Facts get restated; causes do not get invented.
+        raw_draft = self._render_facts(store_nbr, family, retrieved_facts)
+        is_verified, verified_explanation, _ = VerificationGate.verify_response(
+            raw_draft, retrieved_facts, knowledge
         )
-        is_verified, verified_explanation, _ = VerificationGate.verify_response(raw_draft, retrieved_facts, knowledge)
-        memory.add_turn("assistant", verified_explanation)
-        return verified_explanation, is_verified, prefetch_tools
+        answer = verified_explanation if is_verified else raw_draft
+        memory.add_turn("assistant", answer)
+        return answer, is_verified, prefetch_tools
+
+    @staticmethod
+    def _withheld_message(store_nbr: int, family: str) -> str:
+        return (
+            f"I drafted an answer about store {store_nbr} / {family!r} but it contained "
+            f"figures I could not match against the retrieved records, so I'm withholding "
+            f"it rather than showing numbers I can't support."
+        )
+
+    @staticmethod
+    def _render_facts(store_nbr: int, family: str, facts: Dict[str, Any]) -> str:
+        """Restates retrieved facts. Only keys actually present are mentioned."""
+        parts = [f"Store {store_nbr}, {family}:"]
+
+        engine = facts.get("selected_engine")
+        if engine:
+            parts.append(f"forecast produced by {engine}")
+
+        rmsle = facts.get("backtest_rmsle")
+        if rmsle is not None:
+            parts.append(f"backtest RMSLE {float(rmsle):.4f}")
+
+        total = facts.get("forecast_16d_sum")
+        if total is not None:
+            parts.append(f"forecast total {float(total):.1f} units")
+
+        avg = facts.get("forecast_avg_daily")
+        if avg is not None:
+            parts.append(f"average {float(avg):.1f} units/day")
+
+        rop = facts.get("reorder_point")
+        if rop is not None:
+            parts.append(f"reorder point {float(rop):.1f}")
+
+        run_id = facts.get("run_id")
+        if run_id:
+            parts.append(f"from run {run_id}")
+
+        return " ".join([parts[0], ", ".join(parts[1:]) + "."]) if len(parts) > 1 else parts[0]

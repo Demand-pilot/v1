@@ -1,6 +1,6 @@
 """
 Unit and Contract Verification Tests for Layer 3 Feature Engineering & Selection Pipeline.
-Verifies DemandProfiler, FeatureTransformer, and FeatureAblationHarness.
+Verifies DemandProfiler and the CORE/OPTIONAL feature builders.
 """
 
 import numpy as np
@@ -8,8 +8,7 @@ import pandas as pd
 import pytest
 
 from src.features.demand_profiler import DemandProfiler
-from src.features.transformer import FeatureTransformer
-from src.features.ablation_experiment import FeatureAblationHarness, FEATURE_SETS
+from src.features.transformer import CoreFeatureBuilder, OptionalFeatureBuilder
 
 
 def test_demand_profiler_smooth_staple():
@@ -30,7 +29,7 @@ def test_demand_profiler_permanent_zero():
     profile = DemandProfiler.profile_series(store_nbr=14, family="BOOKS", sales_series=sales)
 
     assert profile["sub_domain"] == "PERMANENT_ZERO"
-    assert profile["target_engine"] == "HARDCODED_ZERO_MASK"
+    assert profile["target_engine"] == "ZERO_MASK"
     assert profile["is_permanent_zero"] is True
     assert profile["zero_ratio"] == 1.0
 
@@ -48,64 +47,35 @@ def test_demand_profiler_promo_surge():
     assert profile["promo_elasticity"] > 0.5
 
 
-def test_transformer_oil_differencing():
-    """Verify oil price first-differencing (delta_oil) removes trend while preserving shocks."""
-    dates = pd.date_range('2017-01-01', periods=5, freq='D')
-    oil_raw = pd.DataFrame({
-        'date': dates,
-        'dwtruck_price': [50.0, 52.0, 51.0, np.nan, 55.0]
-    })
+def test_core_calendar_features_are_dataset_agnostic():
+    """CORE calendar features depend only on the date."""
+    dates = pd.to_datetime(["2017-08-15", "2017-08-31", "2017-09-01"])
+    cal = CoreFeatureBuilder.calendar(dates)
 
-    oil_transformed = FeatureTransformer.transform_oil_data(oil_raw)
-    assert 'delta_oil' in oil_transformed.columns
-    assert 'delta_oil_3d_rolling' in oil_transformed.columns
-    assert oil_transformed['delta_oil'].iloc[1] == 2.0  # 52.0 - 50.0
-
-
-def test_transformer_payday_features():
-    """Verify is_day_after_payday and payday_weekday_interaction flags."""
-    df = pd.DataFrame({
-        'date': pd.to_datetime(['2017-08-15', '2017-08-16', '2017-09-01'])
-    })
-    transformed = FeatureTransformer.add_payday_features(df)
-
-    assert transformed['is_payday'].iloc[0] == 1  # 15th is payday
-    assert transformed['is_day_after_payday'].iloc[1] == 1  # 16th is day after
-    assert transformed['is_day_after_payday'].iloc[2] == 1  # 1st is day after
+    assert list(cal.columns) == CoreFeatureBuilder.CALENDAR_FEATURES
+    assert cal["day"].tolist() == [15, 31, 1]
+    assert cal["month"].tolist() == [8, 8, 9]
+    assert cal["is_month_end"].tolist() == [0, 1, 0]
+    assert cal["is_month_start"].tolist() == [0, 0, 1]
+    assert cal.isna().sum().sum() == 0
 
 
-def test_transformer_earthquake_decay():
-    """Verify 30-day post-earthquake exponential decay feature."""
-    df = pd.DataFrame({
-        'date': pd.to_datetime(['2016-04-16', '2016-04-26', '2016-05-20'])
-    })
-    transformed = FeatureTransformer.add_earthquake_decay_feature(df)
+def test_configured_calendar_flag_replaces_hardcoded_payday():
+    """
+    Payday flags come from the dataset config, not from a literal in the feature code.
 
-    assert transformed['earthquake_decay'].iloc[0] == 1.0  # Day 0 = exp(0) = 1.0
-    assert 0.0 < transformed['earthquake_decay'].iloc[1] < 1.0  # Day 10 decay
-    assert transformed['earthquake_decay'].iloc[2] == 0.0  # > 30 days = 0.0
+    `days_of_month` was previously the hardcoded list [15, 30, 31] inside
+    FeatureTransformer.add_payday_features.
+    """
+    from src.ingest.adapter import ExogenousSpec
 
+    spec = ExogenousSpec(kind="calendar_flag", name="is_payday", days_of_month=[15, 30, 31])
+    dates = pd.to_datetime(["2017-08-15", "2017-08-16", "2017-08-30", "2017-08-20"])
+    flags = OptionalFeatureBuilder.calendar_flag(dates, spec)
 
-def test_ablation_harness_best_combination_selection():
-    """Verify feature ablation selects Set B/C for LightGBM and Set A for LSTM."""
-    val_df = pd.DataFrame({
-        'sales': np.random.uniform(50, 150, 100)
-    })
+    assert flags.name == "is_payday"
+    assert flags.tolist() == [1, 0, 1, 0]
 
-    # LightGBM on Promo Surge should pick Set B or C (Promo features reduce RMSLE)
-    lgbm_winner = FeatureAblationHarness.select_best_feature_combination(
-        sub_domain="PROMO_ELASTIC_SURGE",
-        target_model="LIGHTGBM_GBDT",
-        val_df=val_df
-    )
-    assert lgbm_winner["feature_set"] in ["SET_B_PROMO_PAYDAY", "SET_C_FULL_CONTEXT_SHOCKS"]
-    assert lgbm_winner["backtest_rmsle"] < 0.40
-
-    # LSTM on Smooth Staples should pick Set A (Clean temporal sequence without noise)
-    lstm_winner = FeatureAblationHarness.select_best_feature_combination(
-        sub_domain="SMOOTH_HIGH_VOLUME_STAPLE",
-        target_model="PYTORCH_LSTM",
-        val_df=val_df
-    )
-    assert lstm_winner["feature_set"] == "SET_A_TEMPORAL_BASE"
-    assert lstm_winner["backtest_rmsle"] < 0.22
+    # A different dataset declares different paydays, with no code change.
+    other = ExogenousSpec(kind="calendar_flag", name="is_payday", days_of_month=[1])
+    assert OptionalFeatureBuilder.calendar_flag(dates, other).tolist() == [0, 0, 0, 0]

@@ -1,0 +1,68 @@
+# Corporación Favorita, Ecuador (Kaggle: Store Sales - Time Series Forecasting).
+#
+# This file is the ONLY place Ecuador appears in the required path. Oil, paydays, the
+# April 2016 earthquake, and the Dec 25 / Jan 1 closures with store 25's exemption are all
+# properties of this dataset, declared here as data. No Python module may reference them.
+
+name: favorita_ecuador
+grain: daily
+
+files:
+  main:
+    path: data/train.csv
+    entity_id: store_nbr
+    item_id: family
+    date: date
+    target: sales
+    promo: onpromotion
+
+  entity_meta:
+    path: data/stores.csv
+    join_on: store_nbr
+    columns: [city, state, type, cluster]
+
+# Favorita's `onpromotion` is a published promotional schedule, so its value for a future
+# target date is genuinely knowable at the cutoff. This must be declared explicitly rather
+# than assumed: for a dataset where promo is only recorded after the fact, using it at
+# horizon h would be leakage.
+promo_known_in_advance: true
+
+exogenous:
+  # Raw WTI level is spuriously correlated with any trending target; difference it.
+  - kind: global_series
+    name: delta_oil
+    path: data/oil.csv
+    date_col: date
+    value_col: dcoilwtico
+    transform: first_difference
+
+  - kind: calendar_flag
+    name: is_payday
+    days_of_month: [15, 30, 31]
+
+  - kind: calendar_flag
+    name: is_day_after_payday
+    days_of_month: [16, 1]
+
+  # 2016-04-16, magnitude 7.8. `half_life` is a true half-life: the multiplier is
+  # 0.5 ** (days_since / half_life), so it reaches 0.5 at day 10 and is truncated at
+  # decay_days. The previous hardcoded implementation used exp(-days / 10.0), whose actual
+  # half-life is 10 * ln(2) ~= 6.93 days, while calling the 10 a half-life.
+  - kind: event_decay
+    name: earthquake_decay
+    event_date: 2016-04-16
+    decay_days: 30
+    half_life: 10
+
+# Days on which entities record no sales because the store is shut. Applied as a
+# post-processing mask at inference, never as a learned pattern.
+closures:
+  - month_day: "12-25"
+    entities: all
+  - month_day: "01-01"
+    entities: all
+    except: ["25"]
+
+# A series must be observed at least this long before "permanently zero" is a claim about
+# the world rather than about a short sample.
+permanent_zero_min_history: 365

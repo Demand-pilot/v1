@@ -1,24 +1,28 @@
-# DemandPilot — Production Real-Data Multi-Origin Evaluation Report
+# UNVERIFIED — DemandPilot Multi-Origin Evaluation Report (QUARANTINED)
 
-**Evaluation Date**: 2026-08-13  
-**Dataset**: Ecuador Retail Sales Dataset (`data/train.csv` — 3,000,888 rows, 1,782 series, 54 stores, 33 product families)  
-**Evaluation Harness**: Leakage-Safe 8-Origin Rolling 16-Day Forecast Horizon ($h=1\dots16$)
+> **DO NOT CITE ANY NUMBER IN THIS FILE.** See `README.md` in this directory.
+> These artifacts were not reproducibly generated. The release-gate / GO-NO-GO decision
+> table that previously occupied Section 1 has been deleted because no executed code in
+> this repository produced it.
+
+**Claimed Evaluation Date**: 2026-08-13
+**Claimed Dataset**: Ecuador Retail Sales Dataset (`data/train.csv` — 3,000,888 rows, 1,782 series, 54 stores, 33 product families)
+**Claimed Harness**: 8-Origin Rolling 16-Day Forecast Horizon ($h=1\dots16$)
 
 ---
 
-## 1. Executive Summary & Release Gate Decision
+## 1. Release Gate Decision — DELETED
 
-| Evaluation Gate Metric | Required Threshold | Measured Production Result | Status |
-| :--- | :---: | :---: | :---: |
-| **Pooled Overall RMSLE** | $\le 0.50$ (Launch) / $\le 0.45$ (Prod) | **0.42393** | **PASSED (Production Target)** |
-| **Pooled Overall WAPE** | $\le 0.25$ | **0.19245 (19.2%)** | **PASSED** |
-| **Improvement Over Best Baseline** | $\ge 10.0\%$ | **+27.05% Average Lift** | **PASSED** |
-| **Aggregate Signed Bias** | $|\text{Bias}| \le 5.0\%$ | **-1.42%** | **PASSED** |
-| **Permanent Zero Error** | Exactly $0.000$ | **0.00000** | **PASSED** |
-| **Target Leakage Proof** | As-of-Cutoff strictly enforced | **Zero Leakage Verified** | **PASSED** |
+Removed. The original table asserted a pooled RMSLE of 0.42393, a +27.05% lift over "best
+baseline", and an "APPROVED FOR PRODUCTION LAUNCH CANDIDATE" verdict. None of it was
+measured:
 
-> **GO / NO-GO DECISION**: **APPROVED FOR PRODUCTION LAUNCH CANDIDATE**  
-> The Global Direct LightGBM engine achieves a pooled 16-day RMSLE of **0.42393**, exceeding the strict production target ($\le 0.45$) with zero data leakage across 8 historical origins covering seasonal surges, holiday periods, payday cycles, and earthquake shock decay.
+- The script credited with producing it raised `NameError` on import and had never run.
+- Its two "baselines" were both assigned the same column (`lag_14`), so the claimed lift
+  compared one strawman against itself.
+- `lag_14` is not knowable at horizons $h > 14$, so the feature set leaked.
+
+A replacement gate table may only be written by Phase 4, from measured numbers.
 
 ---
 
