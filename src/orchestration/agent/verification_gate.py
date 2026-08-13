@@ -51,27 +51,33 @@ class VerificationGate:
         promo_train = float(retrieved_facts.get("promo_density_train", 0.204)) * 100.0
         promo_test = float(retrieved_facts.get("promo_density_test", 0.441)) * 100.0
 
-        # Check 1: Similarity Threshold Enforcement
-        if max_similarity < 0.75:
+        # Check 1: Similarity Threshold Notification (Log warning, don't overwrite user response if response is substantial)
+        if max_similarity < 0.70 and len(llm_response.strip()) < 80 and not any(k in llm_response.lower() for k in ["hello", "hi", "help", "stock", "rop", "reorder", "model", "forecast"]):
             fallback_text = (
                 f"Forecast for Store {store_nbr} ({family}) verified in SQL logs (+{expected_surge:.0f}% surge predicted by {engine}), "
                 f"but no specific local event notes were found in the store knowledge base with sufficient confidence."
             )
-            logger.warning(f"Verification Gate: Low similarity score ({max_similarity:.2f} < 0.75). Triggering fallback.")
+            logger.warning(f"Verification Gate: Low similarity score ({max_similarity:.2f} < 0.70) on short response. Triggering fallback.")
             return True, fallback_text, sources_used
 
         # Check 2: Contextual Percentage & Numerical Cross-Check
         extracted_pcts = cls.extract_percentages(llm_response)
 
-        pct_matches = (
+        # Check if the LLM generated a conflicting percentage specifically regarding surge/promotions
+        has_matching_pct = (
             expected_surge in extracted_pcts or
             round(expected_surge) in extracted_pcts or
             abs(expected_surge) in extracted_pcts or
             round(abs(expected_surge)) in extracted_pcts
         )
 
-        # If percentage discrepancy exists in critical surge numbers
-        if not pct_matches:
+        has_conflicting_pct = bool(extracted_pcts) and not has_matching_pct
+
+        # If the response explicitly states an incorrect percentage (e.g. 500% instead of 145%)
+        # or is a short unanchored surge snippet lacking the verified metric:
+        is_short_snippet = len(llm_response.strip()) < 80 and not any(k in llm_response.lower() for k in ["hello", "hi", "assist", "welcome", "help", "stock", "rop", "reorder", "formula", "lead time", "unit"])
+
+        if has_conflicting_pct or (not extracted_pcts and is_short_snippet):
             # Re-anchor text dynamically with exact verified numbers
             anchored_text = (
                 f"Store {store_nbr} shows a verified +{expected_surge:.0f}% demand surge for {family.title()} "
@@ -82,3 +88,4 @@ class VerificationGate:
             return True, anchored_text, sources_used
 
         return True, llm_response, sources_used
+

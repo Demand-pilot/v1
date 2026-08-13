@@ -7,6 +7,8 @@ import os
 import json
 import logging
 from typing import Dict, Any, List, Optional, Tuple
+from dotenv import load_dotenv
+load_dotenv()
 
 from src.orchestration.agent.tools import (
     get_forecast_logs,
@@ -211,71 +213,113 @@ class GroqGroundedAgent:
                     {"role": "user", "content": query}
                 ]
 
+                models_to_try = [self.model]
+                if "8b" not in self.model:
+                    models_to_try.append("llama-3.1-8b-instant")
+
                 raw_text = None
-                try:
-                    # Primary call with tools available
-                    response = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=messages,
-                        tools=GROQ_TOOLS_SCHEMA,
-                        tool_choice="auto"
+                last_err = None
+
+                for target_model in models_to_try:
+                    try:
+                        # Primary attempt with tools
+                        try:
+                            response = self.client.chat.completions.create(
+                                model=target_model,
+                                messages=messages,
+                                tools=GROQ_TOOLS_SCHEMA,
+                                tool_choice="auto"
+                            )
+                            response_message = response.choices[0].message
+
+                            if response_message.tool_calls:
+                                messages.append(response_message)
+                                for tool_call in response_message.tool_calls:
+                                    func_name = tool_call.function.name
+                                    func_args = json.loads(tool_call.function.arguments)
+                                    tool_result = self._execute_tool(func_name, func_args)
+                                    groq_called_tools.append(func_name)
+                                    messages.append({
+                                        "role": "tool",
+                                        "tool_call_id": tool_call.id,
+                                        "name": func_name,
+                                        "content": json.dumps(tool_result)
+                                    })
+
+                                second_response = self.client.chat.completions.create(
+                                    model=target_model,
+                                    messages=messages
+                                )
+                                raw_text = second_response.choices[0].message.content
+                            else:
+                                raw_text = response_message.content
+
+                        except Exception as tool_err:
+                            # Retry without tools — Llama 3.3/3.1 sometimes emits XML-style function calls
+                            logger.info(f"Retrying {target_model} without tools after: {tool_err}")
+                            retry_response = self.client.chat.completions.create(
+                                model=target_model,
+                                messages=messages
+                            )
+                            raw_text = retry_response.choices[0].message.content
+
+                        if raw_text and raw_text.strip():
+                            break  # Successfully generated with target_model
+
+                    except Exception as model_err:
+                        last_err = model_err
+                        logger.warning(f"Groq {target_model} failed ({model_err}). Trying next fallback model...")
+
+                if raw_text and raw_text.strip():
+                    # Verification Gate Pass
+                    is_verified, verified_explanation, _ = VerificationGate.verify_response(
+                        raw_text, retrieved_facts, knowledge
                     )
-                    response_message = response.choices[0].message
 
-                    # Handle tool calling if the LLM decided it needs additional data
-                    if response_message.tool_calls:
-                        messages.append(response_message)
-                        for tool_call in response_message.tool_calls:
-                            func_name = tool_call.function.name
-                            func_args = json.loads(tool_call.function.arguments)
-                            tool_result = self._execute_tool(func_name, func_args)
-                            groq_called_tools.append(func_name)
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "name": func_name,
-                                "content": json.dumps(tool_result)
-                            })
+                    # Record assistant response in memory
+                    memory.add_turn("assistant", verified_explanation)
 
-                        second_response = self.client.chat.completions.create(
-                            model=self.model,
-                            messages=messages
-                        )
-                        raw_text = second_response.choices[0].message.content
-                    else:
-                        raw_text = response_message.content
+                    all_tools = list(set(prefetch_tools + groq_called_tools))
+                    return verified_explanation, is_verified, all_tools
+                else:
+                    logger.warning(f"All Groq models failed ({last_err}). Using query-aware grounded RAG synthesis engine.")
 
-                except Exception as tool_err:
-                    # Retry without tools — Llama 3.3 sometimes emits XML-style function calls
-                    # that cause tool_use_failed. Since all data is in the system prompt, a plain
-                    # completion works fine.
-                    logger.info(f"Retrying Groq without tools after: {tool_err}")
-                    retry_response = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=messages
-                    )
-                    raw_text = retry_response.choices[0].message.content
-
-                # Verification Gate Pass
-                is_verified, verified_explanation, _ = VerificationGate.verify_response(
-                    raw_text, retrieved_facts, knowledge
-                )
-
-                # Record assistant response in memory
-                memory.add_turn("assistant", verified_explanation)
-
-                all_tools = list(set(prefetch_tools + groq_called_tools))
-                return verified_explanation, is_verified, all_tools
             except Exception as err:
                 logger.warning(f"Groq API call error: {err}. Falling back to grounded RAG engine.")
 
-        # Grounded RAG Fallback
-        raw_draft = (
-            f"Store {store_nbr} ({family}) exhibits a +{retrieved_facts['surge_percentage']:.0f}% demand surge in late August. "
-            f"This surge is driven by the Sierra academic season and active promo density increasing "
-            f"from {retrieved_facts['promo_density_train']*100:.1f}% to {retrieved_facts['promo_density_test']*100:.1f}%. "
-            f"Selected Engine: {retrieved_facts['selected_engine']} (Backtest RMSLE: {retrieved_facts['backtest_rmsle']})."
-        )
+        # Intelligent Query-Aware Grounded RAG Fallback
+        q_lower = query.lower()
+        if any(w in q_lower for w in ["hello", "hi", "hey", "who are you", "what can you do", "help"]):
+            raw_draft = (
+                f"Hello! I am the DemandPilot Retail AI Assistant for Corporación Favorita. "
+                f"I provide data-grounded explanations, forecast analyses, and inventory calculations. "
+                f"Currently viewing Store {store_nbr} ({family}). You can ask me about demand surges, "
+                f"promotional elasticity, model performance (LightGBM vs PyTorch LSTM), or Reorder Points (ROP)."
+            )
+        elif any(w in q_lower for w in ["safety stock", "rop", "reorder point", "formula", "inventory"]):
+            rop_info = calculate_inventory_rop(forecast_avg_daily=retrieved_facts.get("forecast_16d_sum", 1600.0) / 16.0)
+            raw_draft = (
+                f"Reorder Point (ROP) and Safety Stock (SS) for Store {store_nbr} ({family}):\n"
+                f"- Safety Stock (SS) = Z * std_dev * sqrt(lead_time) = {rop_info['safety_stock']} units\n"
+                f"- Reorder Point (ROP) = (Avg Daily Demand * Lead Time) + SS = {rop_info['reorder_point']} units\n"
+                f"- Lead Time: {rop_info['lead_time_days']} days (Service Factor Z: {rop_info['service_factor_z']})."
+            )
+        elif any(w in q_lower for w in ["model", "gbdt", "lstm", "algorithm", "engine", "rmsle"]):
+            raw_draft = (
+                f"For Store {store_nbr} ({family}), the selected forecasting engine is {retrieved_facts.get('selected_engine', 'LightGBM_GBDT')} "
+                f"with a backtest RMSLE of {retrieved_facts.get('backtest_rmsle', 0.3812):.4f}. "
+                f"LightGBM GBDT is selected for high promo-elasticity items and tabular shock features, "
+                f"while PyTorch LSTM captures smooth sequence trends for high-volume staples."
+            )
+        else:
+            raw_draft = (
+                f"Store {store_nbr} ({family}) exhibits a +{retrieved_facts.get('surge_percentage', 0):.0f}% demand surge in late August. "
+                f"This surge is driven by seasonal regional demand and active promo density increasing "
+                f"from {retrieved_facts.get('promo_density_train', 0.204)*100:.1f}% to {retrieved_facts.get('promo_density_test', 0.441)*100:.1f}%. "
+                f"Selected Engine: {retrieved_facts.get('selected_engine', 'LightGBM_GBDT')} (Backtest RMSLE: {retrieved_facts.get('backtest_rmsle', 0.3812)})."
+            )
+
         is_verified, verified_explanation, _ = VerificationGate.verify_response(raw_draft, retrieved_facts, knowledge)
         memory.add_turn("assistant", verified_explanation)
         return verified_explanation, is_verified, prefetch_tools
+
