@@ -224,7 +224,7 @@
         /* Diagram & Image Layouts with Detailed Explanations */
         .diagram-split-container {
             display: grid;
-            grid-template-columns: 1.15fr 1fr;
+            grid-template-columns: 1.2fr 1fr;
             gap: 1.35rem;
             align-items: stretch;
             flex-grow: 1;
@@ -240,11 +240,14 @@
             justify-content: center;
             box-shadow: var(--shadow-subtle);
             overflow: hidden;
+            width: 100%;
+            height: 100%;
         }
 
         .diagram-image-box img {
-            max-width: 100%;
-            max-height: 490px;
+            width: 100%;
+            height: 100%;
+            max-height: 510px;
             object-fit: contain;
             border-radius: 4px;
         }
