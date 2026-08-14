@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import React, { useRef, useState, useMemo } from 'react';
-import * as THREE from 'three';
-import { Canvas } from '@react-three/fiber';
-import { CameraControls, ContactShadows, Float } from '@react-three/drei';
+import React, { useRef, useState, useMemo } from "react";
+import * as THREE from "three";
+import { Canvas } from "@react-three/fiber";
+import { CameraControls, ContactShadows, Float } from "@react-three/drei";
 
 // ==========================================
 // Types & Interfaces
@@ -27,43 +27,199 @@ export interface AisleData {
 // Soft Pastel & Editorial Color Palette
 // ==========================================
 const PASTEL_COLORS = {
-  bg: '#FEF9F4',
-  floor: '#F4ECE6',
-  floorTile: '#EAE0D5',
-  wall: '#D5C3B5',
-  aisleMetal: '#4A3E5D',
-  shelfWood: '#C8B8AA',
-  
+  bg: "#FEF9F4",
+  floor: "#F4ECE6",
+  floorTile: "#EAE0D5",
+  wall: "#D5C3B5",
+  aisleMetal: "#4A3E5D",
+  shelfWood: "#C8B8AA",
+
   // Status Glow Colors
-  spikeEmissive: '#F39C12', // Amber Yellow Glow
-  spikeRed: '#E74C3C',
-  optimalGreen: '#36B37E',
-  accentPurple: '#6B5B8A',
+  spikeEmissive: "#F39C12", // Amber Yellow Glow
+  spikeRed: "#E74C3C",
+  optimalGreen: "#36B37E",
+  accentPurple: "#6B5B8A",
 };
 
 // Helper function for deterministic string number formatting
 const formatNumber = (num: number): string => {
-  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 };
 
 // ==========================================
 // Detailed Store 14 Product Family Aisles
 // ==========================================
 const STORE_14_AISLES: AisleData[] = [
-  { id: 1, name: 'Aisle 01', category: 'Grocery I', x: -4.2, z: -3.8, demandSurgePct: 12, isSpiking: false, elasticity: 0.42, engine: 'LightGBM GBDT', rmsle: 0.35, currentStock: 1420, recommendedOrder: 180 },
-  { id: 2, name: 'Aisle 02', category: 'Grocery II', x: -1.4, z: -3.8, demandSurgePct: 8, isSpiking: false, elasticity: 0.38, engine: 'LightGBM GBDT', rmsle: 0.36, currentStock: 980, recommendedOrder: 90 },
-  { id: 3, name: 'Aisle 03', category: 'Beverages', x: 1.4, z: -3.8, demandSurgePct: 24, isSpiking: false, elasticity: 0.51, engine: 'PyTorch LSTM', rmsle: 0.40, currentStock: 1210, recommendedOrder: 220 },
-  { id: 4, name: 'Aisle 04', category: 'Liquor & Wine', x: 4.2, z: -3.8, demandSurgePct: 5, isSpiking: false, elasticity: 0.30, engine: 'LightGBM GBDT', rmsle: 0.34, currentStock: 490, recommendedOrder: 40 },
-  
-  { id: 5, name: 'Aisle 05', category: 'School Supplies', x: 2.2, z: -1.0, demandSurgePct: 145, isSpiking: true, elasticity: 0.67, engine: 'LightGBM GBDT', rmsle: 0.38, currentStock: 340, recommendedOrder: 680 },
-  { id: 6, name: 'Aisle 06', category: 'Personal Care', x: -4.2, z: -1.0, demandSurgePct: 18, isSpiking: false, elasticity: 0.45, engine: 'LightGBM GBDT', rmsle: 0.33, currentStock: 840, recommendedOrder: 150 },
-  { id: 7, name: 'Aisle 07', category: 'Cleaning', x: -1.4, z: -1.0, demandSurgePct: 14, isSpiking: false, elasticity: 0.40, engine: 'Baseline Moving Avg', rmsle: 0.42, currentStock: 680, recommendedOrder: 110 },
-  { id: 8, name: 'Aisle 08', category: 'Deli & Prepared', x: 4.2, z: -1.0, demandSurgePct: 16, isSpiking: false, elasticity: 0.43, engine: 'LightGBM GBDT', rmsle: 0.35, currentStock: 310, recommendedOrder: 130 },
+  {
+    id: 1,
+    name: "Aisle 01",
+    category: "Grocery I",
+    x: -4.2,
+    z: -3.8,
+    demandSurgePct: 12,
+    isSpiking: false,
+    elasticity: 0.42,
+    engine: "LightGBM GBDT",
+    rmsle: 0.35,
+    currentStock: 1420,
+    recommendedOrder: 180,
+  },
+  {
+    id: 2,
+    name: "Aisle 02",
+    category: "Grocery II",
+    x: -1.4,
+    z: -3.8,
+    demandSurgePct: 8,
+    isSpiking: false,
+    elasticity: 0.38,
+    engine: "LightGBM GBDT",
+    rmsle: 0.36,
+    currentStock: 980,
+    recommendedOrder: 90,
+  },
+  {
+    id: 3,
+    name: "Aisle 03",
+    category: "Beverages",
+    x: 1.4,
+    z: -3.8,
+    demandSurgePct: 24,
+    isSpiking: false,
+    elasticity: 0.51,
+    engine: "PyTorch LSTM",
+    rmsle: 0.4,
+    currentStock: 1210,
+    recommendedOrder: 220,
+  },
+  {
+    id: 4,
+    name: "Aisle 04",
+    category: "Liquor & Wine",
+    x: 4.2,
+    z: -3.8,
+    demandSurgePct: 5,
+    isSpiking: false,
+    elasticity: 0.3,
+    engine: "LightGBM GBDT",
+    rmsle: 0.34,
+    currentStock: 490,
+    recommendedOrder: 40,
+  },
 
-  { id: 9, name: 'Aisle 09', category: 'Poultry & Meat', x: -4.2, z: 1.8, demandSurgePct: 22, isSpiking: false, elasticity: 0.48, engine: 'PyTorch LSTM', rmsle: 0.39, currentStock: 460, recommendedOrder: 190 },
-  { id: 10, name: 'Aisle 10', category: 'Frozen Foods', x: -1.4, z: 1.8, demandSurgePct: 9, isSpiking: false, elasticity: 0.35, engine: 'LightGBM GBDT', rmsle: 0.32, currentStock: 790, recommendedOrder: 80 },
-  { id: 11, name: 'Aisle 11', category: 'Dairy & Eggs', x: 1.4, z: 1.8, demandSurgePct: 15, isSpiking: false, elasticity: 0.44, engine: 'LightGBM GBDT', rmsle: 0.31, currentStock: 920, recommendedOrder: 140 },
-  { id: 12, name: 'Aisle 12', category: 'Bakery', x: 4.2, z: 1.8, demandSurgePct: 11, isSpiking: false, elasticity: 0.39, engine: 'Baseline Moving Avg', rmsle: 0.37, currentStock: 260, recommendedOrder: 95 },
+  {
+    id: 5,
+    name: "Aisle 05",
+    category: "School Supplies",
+    x: 2.2,
+    z: -1.0,
+    demandSurgePct: 145,
+    isSpiking: true,
+    elasticity: 0.67,
+    engine: "LightGBM GBDT",
+    rmsle: 0.38,
+    currentStock: 340,
+    recommendedOrder: 680,
+  },
+  {
+    id: 6,
+    name: "Aisle 06",
+    category: "Personal Care",
+    x: -4.2,
+    z: -1.0,
+    demandSurgePct: 18,
+    isSpiking: false,
+    elasticity: 0.45,
+    engine: "LightGBM GBDT",
+    rmsle: 0.33,
+    currentStock: 840,
+    recommendedOrder: 150,
+  },
+  {
+    id: 7,
+    name: "Aisle 07",
+    category: "Cleaning",
+    x: -1.4,
+    z: -1.0,
+    demandSurgePct: 14,
+    isSpiking: false,
+    elasticity: 0.4,
+    engine: "Baseline Moving Avg",
+    rmsle: 0.42,
+    currentStock: 680,
+    recommendedOrder: 110,
+  },
+  {
+    id: 8,
+    name: "Aisle 08",
+    category: "Deli & Prepared",
+    x: 4.2,
+    z: -1.0,
+    demandSurgePct: 16,
+    isSpiking: false,
+    elasticity: 0.43,
+    engine: "LightGBM GBDT",
+    rmsle: 0.35,
+    currentStock: 310,
+    recommendedOrder: 130,
+  },
+
+  {
+    id: 9,
+    name: "Aisle 09",
+    category: "Poultry & Meat",
+    x: -4.2,
+    z: 1.8,
+    demandSurgePct: 22,
+    isSpiking: false,
+    elasticity: 0.48,
+    engine: "PyTorch LSTM",
+    rmsle: 0.39,
+    currentStock: 460,
+    recommendedOrder: 190,
+  },
+  {
+    id: 10,
+    name: "Aisle 10",
+    category: "Frozen Foods",
+    x: -1.4,
+    z: 1.8,
+    demandSurgePct: 9,
+    isSpiking: false,
+    elasticity: 0.35,
+    engine: "LightGBM GBDT",
+    rmsle: 0.32,
+    currentStock: 790,
+    recommendedOrder: 80,
+  },
+  {
+    id: 11,
+    name: "Aisle 11",
+    category: "Dairy & Eggs",
+    x: 1.4,
+    z: 1.8,
+    demandSurgePct: 15,
+    isSpiking: false,
+    elasticity: 0.44,
+    engine: "LightGBM GBDT",
+    rmsle: 0.31,
+    currentStock: 920,
+    recommendedOrder: 140,
+  },
+  {
+    id: 12,
+    name: "Aisle 12",
+    category: "Bakery",
+    x: 4.2,
+    z: 1.8,
+    demandSurgePct: 11,
+    isSpiking: false,
+    elasticity: 0.39,
+    engine: "Baseline Moving Avg",
+    rmsle: 0.37,
+    currentStock: 260,
+    recommendedOrder: 95,
+  },
 ];
 
 // ==========================================
@@ -79,8 +235,8 @@ const DetailedAisle3D: React.FC<{
   const accentColor = aisle.isSpiking
     ? PASTEL_COLORS.spikeEmissive
     : isSelected
-    ? '#6B5B8A'
-    : PASTEL_COLORS.aisleMetal;
+      ? "#6B5B8A"
+      : PASTEL_COLORS.aisleMetal;
 
   return (
     <group
@@ -112,7 +268,7 @@ const DetailedAisle3D: React.FC<{
         <mesh key={idx} position={[0, yHeight, 0]} castShadow receiveShadow>
           <boxGeometry args={[1.7, 0.04, 1.05]} />
           <meshStandardMaterial
-            color={aisle.isSpiking ? '#52436A' : '#4A3E5D'}
+            color={aisle.isSpiking ? "#52436A" : "#4A3E5D"}
             roughness={0.3}
             metalness={0.4}
           />
@@ -126,14 +282,26 @@ const DetailedAisle3D: React.FC<{
           <mesh position={[xOffset, 0.45, -0.25]} castShadow>
             <boxGeometry args={[0.3, 0.24, 0.35]} />
             <meshStandardMaterial
-              color={aisle.isSpiking ? '#F39C12' : i % 2 === 0 ? '#36B37E' : '#E8B4C8'}
+              color={
+                aisle.isSpiking
+                  ? "#F39C12"
+                  : i % 2 === 0
+                    ? "#36B37E"
+                    : "#E8B4C8"
+              }
               roughness={0.2}
             />
           </mesh>
           <mesh position={[xOffset, 0.45, 0.25]} castShadow>
             <boxGeometry args={[0.3, 0.24, 0.35]} />
             <meshStandardMaterial
-              color={aisle.isSpiking ? '#F39C12' : i % 2 === 0 ? '#58A6FF' : '#F59E0B'}
+              color={
+                aisle.isSpiking
+                  ? "#F39C12"
+                  : i % 2 === 0
+                    ? "#58A6FF"
+                    : "#F59E0B"
+              }
               roughness={0.2}
             />
           </mesh>
@@ -142,7 +310,13 @@ const DetailedAisle3D: React.FC<{
           <mesh position={[xOffset, 0.85, -0.2]} castShadow>
             <boxGeometry args={[0.26, 0.24, 0.3]} />
             <meshStandardMaterial
-              color={aisle.isSpiking ? '#F1C40F' : i % 2 === 0 ? '#E74C3C' : '#36B37E'}
+              color={
+                aisle.isSpiking
+                  ? "#F1C40F"
+                  : i % 2 === 0
+                    ? "#E74C3C"
+                    : "#36B37E"
+              }
               roughness={0.2}
             />
           </mesh>
@@ -178,7 +352,12 @@ const DetailedAisle3D: React.FC<{
       {aisle.isSpiking && (
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
           <ringGeometry args={[1.1, 1.4, 32]} />
-          <meshBasicMaterial color={PASTEL_COLORS.spikeEmissive} transparent opacity={0.6} side={THREE.DoubleSide} />
+          <meshBasicMaterial
+            color={PASTEL_COLORS.spikeEmissive}
+            transparent
+            opacity={0.6}
+            side={THREE.DoubleSide}
+          />
         </mesh>
       )}
     </group>
@@ -231,41 +410,47 @@ export default function OperationalView3D() {
   const [chatMessages, setChatMessages] = useState<
     {
       id: string;
-      sender: 'user' | 'agent';
+      sender: "user" | "agent";
       text: string;
       time: string;
-      metrics?: { surge: string; elasticity: string; engine: string; rmsle: string; orderIncrease: string };
+      metrics?: {
+        surge: string;
+        elasticity: string;
+        engine: string;
+        rmsle: string;
+        orderIncrease: string;
+      };
       showAction?: boolean;
     }[]
   >([
     {
-      id: '1',
-      sender: 'user',
-      text: 'Why is School Supplies spiking by +145% at Store 14 in late August?',
-      time: '10:42 AM',
+      id: "1",
+      sender: "user",
+      text: "Why is School Supplies spiking by +145% at Store 14 in late August?",
+      time: "10:42 AM",
     },
     {
-      id: '2',
-      sender: 'agent',
-      text: 'DemandPilot AI Engine analysis for Store 14 (Quito North): Annual Sierra back-to-school season coincides with national bi-weekly payday liquidity (Aug 15). Multi-model arbitration selected LightGBM GBDT over LSTM.',
-      time: '10:42 AM',
+      id: "2",
+      sender: "agent",
+      text: "DemandPilot AI Engine analysis for Store 14 (Quito North): Annual Sierra back-to-school season coincides with national bi-weekly payday liquidity (Aug 15). Multi-model arbitration selected LightGBM GBDT over LSTM.",
+      time: "10:42 AM",
       metrics: {
-        surge: '+145% Peak',
-        elasticity: '0.67 (High)',
-        engine: 'LightGBM GBDT',
-        rmsle: '0.38 (Optimal)',
-        orderIncrease: '+240 Units',
+        surge: "+145% Peak",
+        elasticity: "0.67 (High)",
+        engine: "LightGBM GBDT",
+        rmsle: "0.38 (Optimal)",
+        orderIncrease: "+240 Units",
       },
       showAction: true,
     },
   ]);
-  const [chatInput, setChatInput] = useState('');
+  const [chatInput, setChatInput] = useState("");
 
   const cameraControlsRef = useRef<CameraControls>(null!);
 
   const selectedAisle = useMemo(
     () => aisles.find((a) => a.id === selectedAisleId),
-    [aisles, selectedAisleId]
+    [aisles, selectedAisleId],
   );
 
   // Focus camera directly on School Supplies aisle
@@ -287,7 +472,7 @@ export default function OperationalView3D() {
         aisle.x,
         0.8,
         aisle.z,
-        true
+        true,
       );
     }
   };
@@ -303,15 +488,17 @@ export default function OperationalView3D() {
   const handleApplyOrder = () => {
     setOrderApplied(true);
     setAisles((prev) =>
-      prev.map((a) => (a.id === 5 ? { ...a, currentStock: a.currentStock + 240 } : a))
+      prev.map((a) =>
+        a.id === 5 ? { ...a, currentStock: a.currentStock + 240 } : a,
+      ),
     );
     setChatMessages((prev) => [
       ...prev,
       {
         id: Date.now().toString(),
-        sender: 'agent',
-        text: '✅ ERP Webhook Dispatched: Order adjustment +240 Units confirmed for Store 14 (School Supplies). Projected stockout probability reduced from 18.2% to < 0.8%.',
-        time: '10:44 AM',
+        sender: "agent",
+        text: "✅ ERP Webhook Dispatched: Order adjustment +240 Units confirmed for Store 14 (School Supplies). Projected stockout probability reduced from 18.2% to < 0.8%.",
+        time: "10:44 AM",
       },
     ]);
   };
@@ -330,32 +517,38 @@ export default function OperationalView3D() {
     let replyText = `DemandPilot AI: Analyzing Store 14 telemetry for "${userMsg}". Current inventory safety buffer is Z=1.65 (95% Confidence Level).`;
     let metrics = undefined;
 
-    if (userMsg.toLowerCase().includes('school') || userMsg.toLowerCase().includes('supplies')) {
+    if (
+      userMsg.toLowerCase().includes("school") ||
+      userMsg.toLowerCase().includes("supplies")
+    ) {
       zoomToSchoolSupplies();
       replyText = `DemandPilot AI: Focused on School Supplies (Aisle 05). Volume spike of +145% driven by Sierra back-to-school peak and promo density of 44.1%.`;
       metrics = {
-        surge: '+145% Peak',
-        elasticity: '0.67',
-        engine: 'LightGBM GBDT',
-        rmsle: '0.38',
-        orderIncrease: '+240 Units',
+        surge: "+145% Peak",
+        elasticity: "0.67",
+        engine: "LightGBM GBDT",
+        rmsle: "0.38",
+        orderIncrease: "+240 Units",
       };
-    } else if (userMsg.toLowerCase().includes('reorder') || userMsg.toLowerCase().includes('order')) {
+    } else if (
+      userMsg.toLowerCase().includes("reorder") ||
+      userMsg.toLowerCase().includes("order")
+    ) {
       replyText = `DemandPilot AI: Reorder recommendations computed across 12 product aisles. Priority 1 is School Supplies (+240 units), Priority 2 is Beverages (+80 units).`;
     }
 
     setChatMessages((prev) => [
       ...prev,
-      { id: newMsgId, sender: 'user', text: userMsg, time: '10:45 AM' },
+      { id: newMsgId, sender: "user", text: userMsg, time: "10:45 AM" },
       {
         id: (Date.now() + 1).toString(),
-        sender: 'agent',
+        sender: "agent",
         text: replyText,
-        time: '10:45 AM',
+        time: "10:45 AM",
         metrics,
       },
     ]);
-    setChatInput('');
+    setChatInput("");
   };
 
   return (
@@ -394,7 +587,6 @@ export default function OperationalView3D() {
       {/* Main Integrated Layout (Left Rail + 3D Canvas + Right AI)     */}
       {/* ------------------------------------------------------------- */}
       <div className="relative flex-1 w-full h-full flex flex-col md:flex-row overflow-hidden">
-        
         {/* ----------------------------------------------------------- */}
         {/* Left Rail: Live Inventory & Aisle Health Telemetry          */}
         {/* ----------------------------------------------------------- */}
@@ -406,14 +598,26 @@ export default function OperationalView3D() {
               </span>
               <div className="grid grid-cols-2 gap-2 mt-2">
                 <div className="glass-pastel-card p-2.5 rounded-xl flex flex-col">
-                  <span className="text-[9px] text-slate-500 font-semibold">Today Forecast</span>
-                  <span className="text-base font-extrabold text-purple-950 font-mono">4,850</span>
-                  <span className="text-[9px] font-bold text-emerald-700">+18.4% YoY</span>
+                  <span className="text-[9px] text-slate-500 font-semibold">
+                    Today Forecast
+                  </span>
+                  <span className="text-base font-extrabold text-purple-950 font-mono">
+                    4,850
+                  </span>
+                  <span className="text-[9px] font-bold text-emerald-700">
+                    +18.4% YoY
+                  </span>
                 </div>
                 <div className="glass-pastel-card p-2.5 rounded-xl flex flex-col">
-                  <span className="text-[9px] text-slate-500 font-semibold">Stockout Risk</span>
-                  <span className="text-base font-extrabold text-amber-700 font-mono">3.2%</span>
-                  <span className="text-[9px] text-slate-500">1 Urgent Aisle</span>
+                  <span className="text-[9px] text-slate-500 font-semibold">
+                    Stockout Risk
+                  </span>
+                  <span className="text-base font-extrabold text-amber-700 font-mono">
+                    3.2%
+                  </span>
+                  <span className="text-[9px] text-slate-500">
+                    1 Urgent Aisle
+                  </span>
                 </div>
               </div>
             </div>
@@ -424,7 +628,9 @@ export default function OperationalView3D() {
                 <span className="label-mono-pastel text-[10px] font-bold text-purple-900">
                   PRODUCT AISLES (12)
                 </span>
-                <span className="text-[9px] text-slate-500">Click to Inspect</span>
+                <span className="text-[9px] text-slate-500">
+                  Click to Inspect
+                </span>
               </div>
               <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto pr-1">
                 {aisles.map((aisle) => (
@@ -433,8 +639,8 @@ export default function OperationalView3D() {
                     onClick={() => zoomToAisle(aisle)}
                     className={`p-2 rounded-xl text-left text-xs transition-all flex items-center justify-between border ${
                       selectedAisleId === aisle.id
-                        ? 'bg-purple-100/90 border-purple-400 shadow-sm'
-                        : 'glass-pastel-card hover:bg-purple-50/60 border-purple-200/40'
+                        ? "bg-purple-100/90 border-purple-400 shadow-sm"
+                        : "glass-pastel-card hover:bg-purple-50/60 border-purple-200/40"
                     }`}
                   >
                     <div>
@@ -442,7 +648,10 @@ export default function OperationalView3D() {
                         {aisle.name} — {aisle.category}
                       </div>
                       <div className="text-[10px] text-slate-500">
-                        Stock: <span className="font-mono font-semibold text-purple-900">{formatNumber(aisle.currentStock)}</span>
+                        Stock:{" "}
+                        <span className="font-mono font-semibold text-purple-900">
+                          {formatNumber(aisle.currentStock)}
+                        </span>
                       </div>
                     </div>
                     {aisle.isSpiking ? (
@@ -468,11 +677,16 @@ export default function OperationalView3D() {
                 </span>
               </div>
               <p className="text-[11px] text-amber-950 leading-tight">
-                School Supplies inventory will stock out in 1.4 days without order replenishment.
+                School Supplies inventory will stock out in 1.4 days without
+                order replenishment.
               </p>
               <div className="mt-2 flex items-center justify-between text-[10px]">
-                <span className="text-slate-600 font-semibold">Suggested Add:</span>
-                <span className="font-mono font-bold text-purple-950">+240 Units</span>
+                <span className="text-slate-600 font-semibold">
+                  Suggested Add:
+                </span>
+                <span className="font-mono font-bold text-purple-950">
+                  +240 Units
+                </span>
               </div>
             </div>
           </div>
@@ -487,7 +701,7 @@ export default function OperationalView3D() {
             shadows
             className="w-full h-full cursor-grab active:cursor-grabbing"
           >
-            <fog attach="fog" args={['#FEF9F4', 16, 38]} />
+            <fog attach="fog" args={["#FEF9F4", 16, 38]} />
 
             {/* Studio Lighting */}
             <ambientLight intensity={0.9} color="#FFF5EB" />
@@ -538,20 +752,36 @@ export default function OperationalView3D() {
               </div>
               <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
                 <div>
-                  <span className="text-slate-500 block text-[10px]">Current Stock:</span>
-                  <span className="font-mono font-bold text-purple-950">{formatNumber(selectedAisle.currentStock)} units</span>
+                  <span className="text-slate-500 block text-[10px]">
+                    Current Stock:
+                  </span>
+                  <span className="font-mono font-bold text-purple-950">
+                    {formatNumber(selectedAisle.currentStock)} units
+                  </span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block text-[10px]">Promo Elasticity:</span>
-                  <span className="font-mono font-bold text-purple-950">{selectedAisle.elasticity}</span>
+                  <span className="text-slate-500 block text-[10px]">
+                    Promo Elasticity:
+                  </span>
+                  <span className="font-mono font-bold text-purple-950">
+                    {selectedAisle.elasticity}
+                  </span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block text-[10px]">Selected Engine:</span>
-                  <span className="font-bold text-purple-900 text-[10px]">{selectedAisle.engine}</span>
+                  <span className="text-slate-500 block text-[10px]">
+                    Selected Engine:
+                  </span>
+                  <span className="font-bold text-purple-900 text-[10px]">
+                    {selectedAisle.engine}
+                  </span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block text-[10px]">Model RMSLE:</span>
-                  <span className="font-mono font-bold text-emerald-700">{selectedAisle.rmsle}</span>
+                  <span className="text-slate-500 block text-[10px]">
+                    Model RMSLE:
+                  </span>
+                  <span className="font-mono font-bold text-emerald-700">
+                    {selectedAisle.rmsle}
+                  </span>
                 </div>
               </div>
             </div>
@@ -581,19 +811,29 @@ export default function OperationalView3D() {
             {/* Quick Action Suggestion Chips */}
             <div className="flex flex-wrap gap-1.5 mb-3">
               <button
-                onClick={() => handleQuickPrompt('Why is School Supplies spiking by +145%?')}
+                onClick={() =>
+                  handleQuickPrompt("Why is School Supplies spiking by +145%?")
+                }
                 className="text-[10px] px-2.5 py-1 rounded-lg bg-amber-100/90 text-amber-900 font-semibold border border-amber-200 hover:bg-amber-200 transition-all text-left"
               >
                 🚨 School Supplies Spike (+145%)
               </button>
               <button
-                onClick={() => handleQuickPrompt('Generate ERP Reorder Recommendations for Store 14')}
+                onClick={() =>
+                  handleQuickPrompt(
+                    "Generate ERP Reorder Recommendations for Store 14",
+                  )
+                }
                 className="text-[10px] px-2.5 py-1 rounded-lg bg-purple-100/80 text-purple-900 font-semibold border border-purple-200 hover:bg-purple-200 transition-all text-left"
               >
                 📦 Reorder Suggestions
               </button>
               <button
-                onClick={() => handleQuickPrompt('Compare LightGBM vs LSTM accuracy for beverages')}
+                onClick={() =>
+                  handleQuickPrompt(
+                    "Compare LightGBM vs LSTM accuracy for beverages",
+                  )
+                }
                 className="text-[10px] px-2.5 py-1 rounded-lg bg-emerald-100/80 text-emerald-900 font-semibold border border-emerald-200 hover:bg-emerald-200 transition-all text-left"
               >
                 ⚡ Model RMSLE Compare
@@ -606,14 +846,14 @@ export default function OperationalView3D() {
                 <div
                   key={msg.id}
                   className={`flex flex-col ${
-                    msg.sender === 'user' ? 'items-end' : 'items-start'
+                    msg.sender === "user" ? "items-end" : "items-start"
                   }`}
                 >
                   <div
                     className={`p-3 rounded-2xl text-xs max-w-[95%] transition-all ${
-                      msg.sender === 'user'
-                        ? 'bg-[#6B5B8A] text-white rounded-br-none shadow-sm'
-                        : 'glass-pastel-card text-purple-950 rounded-bl-none border border-purple-200/80 shadow-sm'
+                      msg.sender === "user"
+                        ? "bg-[#6B5B8A] text-white rounded-br-none shadow-sm"
+                        : "glass-pastel-card text-purple-950 rounded-bl-none border border-purple-200/80 shadow-sm"
                     }`}
                   >
                     <p className="leading-relaxed text-[11px]">{msg.text}</p>
@@ -622,24 +862,44 @@ export default function OperationalView3D() {
                     {msg.metrics && (
                       <div className="mt-2.5 p-2 rounded-xl bg-purple-50/80 border border-purple-200/70 text-[10px] flex flex-col gap-1">
                         <div className="flex justify-between">
-                          <span className="text-slate-500 font-medium">Demand Surge:</span>
-                          <span className="font-bold text-amber-800">{msg.metrics.surge}</span>
+                          <span className="text-slate-500 font-medium">
+                            Demand Surge:
+                          </span>
+                          <span className="font-bold text-amber-800">
+                            {msg.metrics.surge}
+                          </span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-slate-500 font-medium">Promo Elasticity:</span>
-                          <span className="font-mono font-bold text-purple-950">{msg.metrics.elasticity}</span>
+                          <span className="text-slate-500 font-medium">
+                            Promo Elasticity:
+                          </span>
+                          <span className="font-mono font-bold text-purple-950">
+                            {msg.metrics.elasticity}
+                          </span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-slate-500 font-medium">Selected Engine:</span>
-                          <span className="font-bold text-purple-900">{msg.metrics.engine}</span>
+                          <span className="text-slate-500 font-medium">
+                            Selected Engine:
+                          </span>
+                          <span className="font-bold text-purple-900">
+                            {msg.metrics.engine}
+                          </span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-slate-500 font-medium">Model RMSLE:</span>
-                          <span className="font-mono font-bold text-emerald-700">{msg.metrics.rmsle}</span>
+                          <span className="text-slate-500 font-medium">
+                            Model RMSLE:
+                          </span>
+                          <span className="font-mono font-bold text-emerald-700">
+                            {msg.metrics.rmsle}
+                          </span>
                         </div>
                         <div className="flex justify-between border-t border-purple-200/60 pt-1 mt-0.5">
-                          <span className="text-purple-900 font-bold">Suggested Add:</span>
-                          <span className="font-mono font-extrabold text-purple-950">{msg.metrics.orderIncrease}</span>
+                          <span className="text-purple-900 font-bold">
+                            Suggested Add:
+                          </span>
+                          <span className="font-mono font-extrabold text-purple-950">
+                            {msg.metrics.orderIncrease}
+                          </span>
                         </div>
                       </div>
                     )}
@@ -664,7 +924,10 @@ export default function OperationalView3D() {
           </div>
 
           {/* Chat Input Form */}
-          <form onSubmit={handleSendMessage} className="mt-2 pt-2.5 border-t border-purple-200/60">
+          <form
+            onSubmit={handleSendMessage}
+            className="mt-2 pt-2.5 border-t border-purple-200/60"
+          >
             <div className="flex gap-1.5">
               <input
                 type="text"

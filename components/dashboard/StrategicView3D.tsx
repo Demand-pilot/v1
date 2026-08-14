@@ -287,6 +287,16 @@ const EditorialEcuadorMap: React.FC = () => {
     return new THREE.BufferGeometry().setFromPoints(points);
   }, []);
 
+  const borderLineObj = useMemo(() => {
+    const mat = new THREE.LineBasicMaterial({
+      color: EDITORIAL_PALETTE.outlinePlum,
+      linewidth: 2,
+      transparent: true,
+      opacity: 0.85,
+    });
+    return new THREE.Line(ecuadorBorderLine, mat);
+  }, [ecuadorBorderLine]);
+
   return (
     <group>
       {/* 1. Seamless Infinite Warm Ground Floor */}
@@ -310,14 +320,7 @@ const EditorialEcuadorMap: React.FC = () => {
       </mesh>
 
       {/* 3. Stylized Soft Plum Boundary Outline */}
-      <line geometry={ecuadorBorderLine}>
-        <lineBasicMaterial
-          color={EDITORIAL_PALETTE.outlinePlum}
-          linewidth={2}
-          transparent
-          opacity={0.85}
-        />
-      </line>
+      <primitive object={borderLineObj} />
     </group>
   );
 };

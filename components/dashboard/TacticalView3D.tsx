@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import React, { useRef, useState, useMemo } from 'react';
-import * as THREE from 'three';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { CameraControls, ContactShadows } from '@react-three/drei';
+import React, { useRef, useState, useMemo } from "react";
+import * as THREE from "three";
+import { Canvas, useFrame } from "@react-three/fiber";
+import { CameraControls, ContactShadows } from "@react-three/drei";
 
 // ==========================================
 // Types & Interfaces
@@ -12,7 +12,7 @@ export interface WarehouseNode {
   id: number;
   name: string;
   code: string;
-  type: 'Central DC' | 'Regional Hub' | 'Crossdock';
+  type: "Central DC" | "Regional Hub" | "Crossdock";
   x: number;
   z: number;
   capacity: number;
@@ -26,30 +26,43 @@ export interface WarehouseNode {
 // Soft Pastel & Editorial Color Palette
 // ==========================================
 const PASTEL_COLORS = {
-  bg: '#FEF9F4',
-  floor: '#F7EFE8',
-  groundContour: '#EAE0D5',
-  nodeMetal: '#3B2F52',
-  nodeGlass: '#52436A',
-  dockTrim: '#D5C3B5',
-  
+  bg: "#FEF9F4",
+  floor: "#F7EFE8",
+  groundContour: "#EAE0D5",
+  nodeMetal: "#3B2F52",
+  nodeGlass: "#52436A",
+  dockTrim: "#D5C3B5",
+
   // Status Colors
-  safetyPlane: '#36B37E', // Mint Green Safety Stock Plane
-  optimalStock: '#36B37E', // Green
-  warningStock: '#F39C12', // Amber
-  criticalStock: '#E74C3C', // Red Pulse
+  safetyPlane: "#36B37E", // Mint Green Safety Stock Plane
+  optimalStock: "#36B37E", // Green
+  warningStock: "#F39C12", // Amber
+  criticalStock: "#E74C3C", // Red Pulse
 };
 
 // Helper function for deterministic string number formatting
 const formatNumber = (num: number): string => {
-  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 };
 
 // 16-Day Horizon Dates (Aug 16 - Aug 31)
 const TIMELINE_DATES = [
-  'Aug 16', 'Aug 17', 'Aug 18', 'Aug 19', 'Aug 20',
-  'Aug 21', 'Aug 22', 'Aug 23', 'Aug 24', 'Aug 25',
-  'Aug 26', 'Aug 27', 'Aug 28', 'Aug 29', 'Aug 30', 'Aug 31'
+  "Aug 16",
+  "Aug 17",
+  "Aug 18",
+  "Aug 19",
+  "Aug 20",
+  "Aug 21",
+  "Aug 22",
+  "Aug 23",
+  "Aug 24",
+  "Aug 25",
+  "Aug 26",
+  "Aug 27",
+  "Aug 28",
+  "Aug 29",
+  "Aug 30",
+  "Aug 31",
 ];
 
 // ==========================================
@@ -58,68 +71,108 @@ const TIMELINE_DATES = [
 const WAREHOUSE_NODES: WarehouseNode[] = [
   {
     id: 1,
-    name: 'Quito Central DC',
-    code: 'DC-UIO-01',
-    type: 'Central DC',
+    name: "Quito Central DC",
+    code: "DC-UIO-01",
+    type: "Central DC",
     x: -3.8,
     z: -2.2,
     capacity: 4500,
     safetyStockLimit: 1400,
-    dailyStockLevels: [2400, 2250, 2080, 1850, 1620, 1450, 1310, 1150, 980, 890, 950, 1120, 1380, 1650, 1920, 2150],
-    dailyInbound: [150, 120, 100, 80, 90, 110, 120, 140, 380, 420, 450, 400, 350, 300, 280, 250],
-    dailyOutbound: [300, 270, 270, 310, 320, 280, 260, 300, 470, 360, 280, 170, 80, 30, 10, 20],
+    dailyStockLevels: [
+      2400, 2250, 2080, 1850, 1620, 1450, 1310, 1150, 980, 890, 950, 1120, 1380,
+      1650, 1920, 2150,
+    ],
+    dailyInbound: [
+      150, 120, 100, 80, 90, 110, 120, 140, 380, 420, 450, 400, 350, 300, 280,
+      250,
+    ],
+    dailyOutbound: [
+      300, 270, 270, 310, 320, 280, 260, 300, 470, 360, 280, 170, 80, 30, 10,
+      20,
+    ],
   },
   {
     id: 2,
-    name: 'Guayaquil Port Hub',
-    code: 'HUB-GYE-02',
-    type: 'Regional Hub',
+    name: "Guayaquil Port Hub",
+    code: "HUB-GYE-02",
+    type: "Regional Hub",
     x: 4.0,
     z: 2.8,
     capacity: 6000,
     safetyStockLimit: 1500,
-    dailyStockLevels: [3800, 3750, 3680, 3600, 3520, 3450, 3380, 3300, 3210, 3100, 2980, 2890, 2800, 2720, 2650, 2580],
-    dailyInbound: [450, 400, 380, 350, 360, 340, 320, 300, 280, 250, 260, 240, 220, 200, 190, 180],
-    dailyOutbound: [500, 450, 450, 430, 440, 410, 390, 380, 370, 360, 380, 330, 300, 270, 260, 250],
+    dailyStockLevels: [
+      3800, 3750, 3680, 3600, 3520, 3450, 3380, 3300, 3210, 3100, 2980, 2890,
+      2800, 2720, 2650, 2580,
+    ],
+    dailyInbound: [
+      450, 400, 380, 350, 360, 340, 320, 300, 280, 250, 260, 240, 220, 200, 190,
+      180,
+    ],
+    dailyOutbound: [
+      500, 450, 450, 430, 440, 410, 390, 380, 370, 360, 380, 330, 300, 270, 260,
+      250,
+    ],
   },
   {
     id: 3,
-    name: 'Cuenca Regional Depot',
-    code: 'DEP-CUE-03',
-    type: 'Regional Hub',
+    name: "Cuenca Regional Depot",
+    code: "DEP-CUE-03",
+    type: "Regional Hub",
     x: -4.2,
     z: 3.8,
     capacity: 3500,
     safetyStockLimit: 1100,
-    dailyStockLevels: [1850, 1820, 1790, 1750, 1710, 1680, 1640, 1600, 1550, 1510, 1480, 1450, 1420, 1400, 1380, 1360],
-    dailyInbound: [120, 110, 100, 90, 90, 80, 80, 70, 60, 70, 70, 60, 60, 50, 50, 40],
-    dailyOutbound: [150, 140, 130, 130, 130, 110, 120, 120, 100, 100, 90, 90, 80, 70, 70, 60],
+    dailyStockLevels: [
+      1850, 1820, 1790, 1750, 1710, 1680, 1640, 1600, 1550, 1510, 1480, 1450,
+      1420, 1400, 1380, 1360,
+    ],
+    dailyInbound: [
+      120, 110, 100, 90, 90, 80, 80, 70, 60, 70, 70, 60, 60, 50, 50, 40,
+    ],
+    dailyOutbound: [
+      150, 140, 130, 130, 130, 110, 120, 120, 100, 100, 90, 90, 80, 70, 70, 60,
+    ],
   },
   {
     id: 4,
-    name: 'Manta Coastal Depot',
-    code: 'DEP-MEC-04',
-    type: 'Regional Hub',
+    name: "Manta Coastal Depot",
+    code: "DEP-MEC-04",
+    type: "Regional Hub",
     x: -7.0,
     z: -0.8,
     capacity: 3200,
     safetyStockLimit: 1000,
-    dailyStockLevels: [1950, 1900, 1840, 1780, 1710, 1640, 1580, 1500, 1420, 1350, 1280, 1220, 1170, 1120, 1080, 1040],
-    dailyInbound: [90, 80, 80, 70, 70, 60, 60, 50, 50, 50, 40, 40, 40, 30, 30, 30],
-    dailyOutbound: [140, 140, 140, 140, 140, 120, 120, 130, 120, 120, 100, 90, 90, 80, 70, 70],
+    dailyStockLevels: [
+      1950, 1900, 1840, 1780, 1710, 1640, 1580, 1500, 1420, 1350, 1280, 1220,
+      1170, 1120, 1080, 1040,
+    ],
+    dailyInbound: [
+      90, 80, 80, 70, 70, 60, 60, 50, 50, 50, 40, 40, 40, 30, 30, 30,
+    ],
+    dailyOutbound: [
+      140, 140, 140, 140, 140, 120, 120, 130, 120, 120, 100, 90, 90, 80, 70, 70,
+    ],
   },
   {
     id: 5,
-    name: 'Santo Domingo Crossdock',
-    code: 'XD-SDQ-05',
-    type: 'Crossdock',
+    name: "Santo Domingo Crossdock",
+    code: "XD-SDQ-05",
+    type: "Crossdock",
     x: 1.5,
     z: -3.8,
     capacity: 3800,
     safetyStockLimit: 1200,
-    dailyStockLevels: [2100, 2050, 1980, 1920, 1850, 1790, 1720, 1660, 1600, 1540, 1490, 1430, 1380, 1330, 1290, 1250],
-    dailyInbound: [110, 100, 100, 90, 90, 80, 80, 70, 70, 60, 60, 50, 50, 50, 40, 40],
-    dailyOutbound: [160, 150, 160, 160, 160, 140, 140, 130, 130, 110, 110, 100, 100, 90, 80, 80],
+    dailyStockLevels: [
+      2100, 2050, 1980, 1920, 1850, 1790, 1720, 1660, 1600, 1540, 1490, 1430,
+      1380, 1330, 1290, 1250,
+    ],
+    dailyInbound: [
+      110, 100, 100, 90, 90, 80, 80, 70, 70, 60, 60, 50, 50, 50, 40, 40,
+    ],
+    dailyOutbound: [
+      160, 150, 160, 160, 160, 140, 140, 130, 130, 110, 110, 100, 100, 90, 80,
+      80,
+    ],
   },
 ];
 
@@ -133,7 +186,8 @@ const WarehouseNode3D: React.FC<{
   onSelect: (node: WarehouseNode) => void;
 }> = ({ node, dayIndex, isSelected, onSelect }) => {
   const inventoryStackRef = useRef<THREE.Group>(null!);
-  const currentStock = node.dailyStockLevels[dayIndex] || node.dailyStockLevels[0];
+  const currentStock =
+    node.dailyStockLevels[dayIndex] || node.dailyStockLevels[0];
   const isBelowSafety = currentStock < node.safetyStockLimit;
 
   // Dynamic inventory height based on stock level (0.4 to 3.2 units)
@@ -147,7 +201,7 @@ const WarehouseNode3D: React.FC<{
       inventoryStackRef.current.scale.y = THREE.MathUtils.lerp(
         inventoryStackRef.current.scale.y,
         targetHeight,
-        delta * 8
+        delta * 8,
       );
     }
   });
@@ -155,8 +209,8 @@ const WarehouseNode3D: React.FC<{
   const statusColor = isBelowSafety
     ? PASTEL_COLORS.criticalStock
     : isSelected
-    ? '#6B5B8A'
-    : PASTEL_COLORS.optimalStock;
+      ? "#6B5B8A"
+      : PASTEL_COLORS.optimalStock;
 
   return (
     <group
@@ -180,7 +234,11 @@ const WarehouseNode3D: React.FC<{
       {[-0.6, 0, 0.6].map((dx, i) => (
         <mesh key={i} position={[dx, 0.38, 1.3]}>
           <boxGeometry args={[0.38, 0.32, 0.04]} />
-          <meshStandardMaterial color="#3B2F52" roughness={0.3} metalness={0.7} />
+          <meshStandardMaterial
+            color="#3B2F52"
+            roughness={0.3}
+            metalness={0.7}
+          />
         </mesh>
       ))}
 
@@ -189,9 +247,13 @@ const WarehouseNode3D: React.FC<{
         [-1.05, 1.05].map((cz, j) => (
           <mesh key={`${i}-${j}`} position={[cx, 1.7, cz]} castShadow>
             <boxGeometry args={[0.08, 3.4, 0.08]} />
-            <meshStandardMaterial color="#3B2F52" roughness={0.3} metalness={0.6} />
+            <meshStandardMaterial
+              color="#3B2F52"
+              roughness={0.3}
+              metalness={0.6}
+            />
           </mesh>
-        ))
+        )),
       )}
 
       {/* 4. Architectural Modern Roof Truss & Parapet Cap */}
@@ -217,8 +279,8 @@ const WarehouseNode3D: React.FC<{
         <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
           <boxGeometry args={[1.75, 1.0, 1.75]} />
           <meshStandardMaterial
-            color={isBelowSafety ? PASTEL_COLORS.criticalStock : '#6B5B8A'}
-            emissive={isBelowSafety ? PASTEL_COLORS.criticalStock : '#3B2F52'}
+            color={isBelowSafety ? PASTEL_COLORS.criticalStock : "#6B5B8A"}
+            emissive={isBelowSafety ? PASTEL_COLORS.criticalStock : "#3B2F52"}
             emissiveIntensity={isBelowSafety ? 0.9 : 0.25}
             roughness={0.3}
             metalness={0.4}
@@ -262,7 +324,12 @@ const SafetyStockPlane: React.FC = () => {
       {/* Subtle Border Rim around Safety Plane */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
         <planeGeometry args={[22.1, 18.1]} />
-        <meshBasicMaterial color="#36B37E" wireframe transparent opacity={0.3} />
+        <meshBasicMaterial
+          color="#36B37E"
+          wireframe
+          transparent
+          opacity={0.3}
+        />
       </mesh>
     </group>
   );
@@ -278,27 +345,27 @@ export default function TacticalView3D() {
   const [isRebalanced, setIsRebalanced] = useState<boolean>(false);
 
   const [chatMessages, setChatMessages] = useState<
-    { sender: 'user' | 'agent'; text: string; time: string; action?: string }[]
+    { sender: "user" | "agent"; text: string; time: string; action?: string }[]
   >([
     {
-      sender: 'user',
-      text: 'Simulate Quito Central DC inventory buffer across the Aug 16-31 Payday horizon.',
-      time: '11:05 AM',
+      sender: "user",
+      text: "Simulate Quito Central DC inventory buffer across the Aug 16-31 Payday horizon.",
+      time: "11:05 AM",
     },
     {
-      sender: 'agent',
-      text: 'Tactical AI Planner: On Day 8 (Aug 24), Quito Central DC (DC-UIO-01) dips below Safety Stock (1,400 units) to 980 units (-30% buffer breach). Recommended action: Dispatch 350 units rebalancing transfer from Guayaquil Port Hub (surplus: +1,700 units).',
-      time: '11:05 AM',
-      action: 'transfer',
+      sender: "agent",
+      text: "Tactical AI Planner: On Day 8 (Aug 24), Quito Central DC (DC-UIO-01) dips below Safety Stock (1,400 units) to 980 units (-30% buffer breach). Recommended action: Dispatch 350 units rebalancing transfer from Guayaquil Port Hub (surplus: +1,700 units).",
+      time: "11:05 AM",
+      action: "transfer",
     },
   ]);
-  const [chatInput, setChatInput] = useState('');
+  const [chatInput, setChatInput] = useState("");
 
   const cameraControlsRef = useRef<CameraControls>(null!);
 
   const selectedNode = useMemo(
     () => nodes.find((n) => n.id === selectedNodeId) || nodes[0],
-    [nodes, selectedNodeId]
+    [nodes, selectedNodeId],
   );
 
   // Smooth camera zoom to specific node
@@ -312,7 +379,7 @@ export default function TacticalView3D() {
         node.x,
         1.2,
         node.z,
-        true
+        true,
       );
     }
   };
@@ -329,9 +396,9 @@ export default function TacticalView3D() {
     setChatMessages((prev) => [
       ...prev,
       {
-        sender: 'agent',
-        text: '✅ ERP Transfer Order #TR-8821 Dispatched: 350 units in transit via E35 Pan-American corridor (Guayaquil Hub -> Quito Central DC). Arrival ETA: 6.5 hrs.',
-        time: '11:06 AM',
+        sender: "agent",
+        text: "✅ ERP Transfer Order #TR-8821 Dispatched: 350 units in transit via E35 Pan-American corridor (Guayaquil Hub -> Quito Central DC). Arrival ETA: 6.5 hrs.",
+        time: "11:06 AM",
       },
     ]);
   };
@@ -343,14 +410,14 @@ export default function TacticalView3D() {
     const userMsg = chatInput.trim();
     setChatMessages((prev) => [
       ...prev,
-      { sender: 'user', text: userMsg, time: '11:07 AM' },
+      { sender: "user", text: userMsg, time: "11:07 AM" },
       {
-        sender: 'agent',
+        sender: "agent",
         text: `Tactical AI: Analyzing network stock simulation on ${TIMELINE_DATES[dayIndex]} for "${userMsg}". Safety stock Z=1.65 coverage is active.`,
-        time: '11:07 AM',
+        time: "11:07 AM",
       },
     ]);
-    setChatInput('');
+    setChatInput("");
   };
 
   return (
@@ -386,7 +453,6 @@ export default function TacticalView3D() {
       {/* Main Integrated Layout (Left Rail + 3D Viewport + Right AI)   */}
       {/* ------------------------------------------------------------- */}
       <div className="relative flex-1 w-full h-full flex flex-col md:flex-row overflow-hidden">
-        
         {/* ----------------------------------------------------------- */}
         {/* Left Rail: 5 Node Network Stock Status                      */}
         {/* ----------------------------------------------------------- */}
@@ -413,25 +479,37 @@ export default function TacticalView3D() {
                     onClick={() => zoomToNode(node)}
                     className={`p-2.5 rounded-xl text-left text-xs transition-all flex flex-col gap-1 border ${
                       selectedNodeId === node.id
-                        ? 'bg-purple-100/90 border-purple-400 shadow-sm'
-                        : 'glass-pastel-card hover:bg-purple-50/60 border-purple-200/40'
+                        ? "bg-purple-100/90 border-purple-400 shadow-sm"
+                        : "glass-pastel-card hover:bg-purple-50/60 border-purple-200/40"
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-purple-950 text-[11px]">{node.name}</span>
+                      <span className="font-bold text-purple-950 text-[11px]">
+                        {node.name}
+                      </span>
                       <span
                         className={`text-[8px] font-bold px-1.5 py-0.2 rounded uppercase ${
                           isBreached
-                            ? 'bg-red-100 text-red-700 animate-pulse'
-                            : 'bg-emerald-100 text-emerald-700'
+                            ? "bg-red-100 text-red-700 animate-pulse"
+                            : "bg-emerald-100 text-emerald-700"
                         }`}
                       >
-                        {isBreached ? 'BELOW SS' : 'BUFFER OK'}
+                        {isBreached ? "BELOW SS" : "BUFFER OK"}
                       </span>
                     </div>
                     <div className="flex justify-between items-center text-[10px] text-slate-500">
-                      <span>Stock: <strong className="text-purple-950 font-mono">{formatNumber(stock)}</strong></span>
-                      <span>Safety: <span className="font-mono">{formatNumber(node.safetyStockLimit)}</span></span>
+                      <span>
+                        Stock:{" "}
+                        <strong className="text-purple-950 font-mono">
+                          {formatNumber(stock)}
+                        </strong>
+                      </span>
+                      <span>
+                        Safety:{" "}
+                        <span className="font-mono">
+                          {formatNumber(node.safetyStockLimit)}
+                        </span>
+                      </span>
                     </div>
                   </button>
                 );
@@ -447,11 +525,15 @@ export default function TacticalView3D() {
                 </span>
               </div>
               <p className="text-[11px] text-purple-900 leading-tight">
-                <strong>Guayaquil Port</strong> ➔ <strong>Quito Central DC</strong>: Transfer 350 units to prevent stockout.
+                <strong>Guayaquil Port</strong> ➔{" "}
+                <strong>Quito Central DC</strong>: Transfer 350 units to prevent
+                stockout.
               </p>
               <div className="mt-2 flex items-center justify-between text-[10px]">
                 <span className="text-slate-600 font-semibold">Lead Time:</span>
-                <span className="font-mono font-bold text-purple-950">6.5 Hours (Pan-Am E35)</span>
+                <span className="font-mono font-bold text-purple-950">
+                  6.5 Hours (Pan-Am E35)
+                </span>
               </div>
             </div>
           </div>
@@ -466,7 +548,7 @@ export default function TacticalView3D() {
             shadows
             className="w-full h-full cursor-grab active:cursor-grabbing"
           >
-            <fog attach="fog" args={['#FEF9F4', 16, 38]} />
+            <fog attach="fog" args={["#FEF9F4", 16, 38]} />
 
             <ambientLight intensity={0.9} color="#FFF5EB" />
             <directionalLight
@@ -511,32 +593,50 @@ export default function TacticalView3D() {
               </span>
               <span
                 className={`text-[8px] px-1.5 py-0.5 rounded font-bold uppercase ${
-                  selectedNode.dailyStockLevels[dayIndex] < selectedNode.safetyStockLimit
-                    ? 'bg-red-100 text-red-700'
-                    : 'bg-emerald-100 text-emerald-700'
+                  selectedNode.dailyStockLevels[dayIndex] <
+                  selectedNode.safetyStockLimit
+                    ? "bg-red-100 text-red-700"
+                    : "bg-emerald-100 text-emerald-700"
                 }`}
               >
-                {selectedNode.dailyStockLevels[dayIndex] < selectedNode.safetyStockLimit
-                  ? 'CRITICAL DEFICIT'
-                  : 'BUFFER HEALTHY'}
+                {selectedNode.dailyStockLevels[dayIndex] <
+                selectedNode.safetyStockLimit
+                  ? "CRITICAL DEFICIT"
+                  : "BUFFER HEALTHY"}
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
               <div>
-                <span className="text-slate-500 block text-[10px]">Projected Stock:</span>
-                <span className="font-mono font-bold text-purple-950">{formatNumber(selectedNode.dailyStockLevels[dayIndex])} units</span>
+                <span className="text-slate-500 block text-[10px]">
+                  Projected Stock:
+                </span>
+                <span className="font-mono font-bold text-purple-950">
+                  {formatNumber(selectedNode.dailyStockLevels[dayIndex])} units
+                </span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[10px]">Safety Limit:</span>
-                <span className="font-mono font-bold text-emerald-700">{formatNumber(selectedNode.safetyStockLimit)} units</span>
+                <span className="text-slate-500 block text-[10px]">
+                  Safety Limit:
+                </span>
+                <span className="font-mono font-bold text-emerald-700">
+                  {formatNumber(selectedNode.safetyStockLimit)} units
+                </span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[10px]">Daily Outbound:</span>
-                <span className="font-mono font-semibold text-purple-900">{selectedNode.dailyOutbound[dayIndex]} units/day</span>
+                <span className="text-slate-500 block text-[10px]">
+                  Daily Outbound:
+                </span>
+                <span className="font-mono font-semibold text-purple-900">
+                  {selectedNode.dailyOutbound[dayIndex]} units/day
+                </span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[10px]">Total Capacity:</span>
-                <span className="font-mono text-purple-900">{formatNumber(selectedNode.capacity)}</span>
+                <span className="text-slate-500 block text-[10px]">
+                  Total Capacity:
+                </span>
+                <span className="font-mono text-purple-900">
+                  {formatNumber(selectedNode.capacity)}
+                </span>
               </div>
             </div>
           </div>
@@ -570,10 +670,12 @@ export default function TacticalView3D() {
                   key={idx}
                   onClick={() => setDayIndex(idx)}
                   className={`cursor-pointer hover:text-purple-950 ${
-                    dayIndex === idx ? 'font-black text-purple-900 underline' : ''
+                    dayIndex === idx
+                      ? "font-black text-purple-900 underline"
+                      : ""
                   }`}
                 >
-                  {date.replace('Aug ', '')}
+                  {date.replace("Aug ", "")}
                 </span>
               ))}
             </div>
@@ -603,13 +705,21 @@ export default function TacticalView3D() {
             {/* Quick Action Suggestion Chips */}
             <div className="flex flex-wrap gap-1.5 mb-3">
               <button
-                onClick={() => setChatInput('Calculate rebalancing transfer cost between Guayaquil and Quito')}
+                onClick={() =>
+                  setChatInput(
+                    "Calculate rebalancing transfer cost between Guayaquil and Quito",
+                  )
+                }
                 className="text-[10px] px-2.5 py-1 rounded-lg bg-purple-100/80 text-purple-900 font-semibold border border-purple-200 hover:bg-purple-200 transition-all text-left"
               >
                 🚚 Rebalance Transfer Cost
               </button>
               <button
-                onClick={() => setChatInput('What is the projected stockout probability for Quito DC?')}
+                onClick={() =>
+                  setChatInput(
+                    "What is the projected stockout probability for Quito DC?",
+                  )
+                }
                 className="text-[10px] px-2.5 py-1 rounded-lg bg-red-100/80 text-red-900 font-semibold border border-red-200 hover:bg-red-200 transition-all text-left"
               >
                 🚨 Quito Stockout Risk
@@ -622,19 +732,19 @@ export default function TacticalView3D() {
                 <div
                   key={idx}
                   className={`flex flex-col ${
-                    msg.sender === 'user' ? 'items-end' : 'items-start'
+                    msg.sender === "user" ? "items-end" : "items-start"
                   }`}
                 >
                   <div
                     className={`p-3 rounded-2xl text-xs max-w-[95%] transition-all ${
-                      msg.sender === 'user'
-                        ? 'bg-[#6B5B8A] text-white rounded-br-none shadow-sm'
-                        : 'glass-pastel-card text-purple-950 rounded-bl-none border border-purple-200/80 shadow-sm'
+                      msg.sender === "user"
+                        ? "bg-[#6B5B8A] text-white rounded-br-none shadow-sm"
+                        : "glass-pastel-card text-purple-950 rounded-bl-none border border-purple-200/80 shadow-sm"
                     }`}
                   >
                     <p className="leading-relaxed text-[11px]">{msg.text}</p>
 
-                    {msg.action === 'transfer' && !isRebalanced && (
+                    {msg.action === "transfer" && !isRebalanced && (
                       <button
                         onClick={handleDispatchTransfer}
                         className="mt-2 w-full py-1.5 bg-[#6B5B8A] hover:bg-purple-900 text-white rounded-lg font-bold text-[10px] shadow-sm transition-all flex items-center justify-center gap-1"
@@ -653,7 +763,10 @@ export default function TacticalView3D() {
           </div>
 
           {/* Chat Input Form */}
-          <form onSubmit={handleSendMessage} className="mt-2 pt-2.5 border-t border-purple-200/60">
+          <form
+            onSubmit={handleSendMessage}
+            className="mt-2 pt-2.5 border-t border-purple-200/60"
+          >
             <div className="flex gap-1.5">
               <input
                 type="text"
